@@ -1,7 +1,5 @@
 /**
  * client.js - Flix Client Logic (FINAL COMPLETE VERSION)
- * Includes: Permanent Delete, Group Avatar Upload, Clipboard Paste, Add Member Modal, 
- * Autocomplete, and UI/Media Fixes.
  */
 const socket = io();
 let currentUser = null;
@@ -23,6 +21,8 @@ const chatTitle = document.getElementById('chat-title');
 const inputArea = document.getElementById('input-area');
 const mobileMenuToggle = document.getElementById('mobile-menu-toggle');
 const chatActionsBtn = document.getElementById('chat-actions-btn');
+const logoutBtn = document.getElementById('logout-btn');
+
 
 // Request/Friend Search Elements
 const friendSearchInput = document.getElementById('friend-search');
@@ -30,7 +30,7 @@ const addFriendBtn = document.getElementById('add-friend-btn');
 const requestsToggle = document.getElementById('requests-toggle');
 const requestsList = document.getElementById('requests-list');
 const reqCountEl = document.getElementById('req-count');
-const autocompleteDropdown = document.querySelector('.autocomplete-dropdown'); // Use existing element
+const autocompleteDropdown = document.querySelector('.autocomplete-dropdown');
 
 
 // Modal Elements (All remain the same for structure)
@@ -73,7 +73,6 @@ async function init() {
     }
     currentUser = await res.json();
     
-    // Initial check for mobile view
     if (window.innerWidth < 768) {
         sidebar.classList.add('hidden'); 
     }
@@ -90,6 +89,14 @@ socket.on('init_data', (data) => {
     globalFriendsList = data.friends; 
     renderRequests(data.requests);
     renderContacts([...data.friends, ...data.groups]);
+    // If the current chat is a friend who was blocked/unblocked, update its state
+    if (currentChatId && !isCurrentChatGroup) {
+        const updatedFriend = data.friends.find(f => f.id === currentChatId);
+        if (updatedFriend) {
+            currentChatFriendData = updatedFriend;
+            openChat(updatedFriend, false); // Re-open chat to update input state
+        }
+    }
 });
 
 socket.on('refresh_data', () => {
@@ -135,7 +142,7 @@ socket.on('error', (message) => {
 
 socket.on('success', (message) => {
     console.log(`Success: ${message}`);
-    if (message.includes('Friend added') || message.includes('Request declined') || message.includes('Group created') || message.includes('members added')) {
+    if (message.includes('Friend added') || message.includes('Request declined') || message.includes('Group created') || message.includes('members added') || message.includes('blocked') || message.includes('unblocked')) {
          socket.emit('refresh_data');
     }
 });
@@ -143,7 +150,6 @@ socket.on('success', (message) => {
 
 // --- UI RENDERING FUNCTIONS ---
 
-// Simple Emoji/Sticker Replacement Helper (MUST match server-side logic for consistency)
 const EMOJI_MAP = {
     ':manface:': '<img src="/assets/man_face.png" class="custom-emoji" alt="Man Face">',
     ':apple:': '🍎',
@@ -165,9 +171,10 @@ function createContactEl(contact, isGroup = false) {
     const statusClass = isGroup ? 'group' : (contact.status === 'online' ? 'online' : 'offline');
     const statusText = isGroup ? 'Group' : contact.status;
     const isBlocked = contact.isBlocked ? ' (Blocked)' : '';
+    const avatarSrc = contact.avatar || contact.groupAvatar || `https://ui-avatars.com/api/?name=${(contact.name || contact.username).substring(0,2)}&background=3b82f6&color=fff&size=128&bold=true`;
 
     el.innerHTML = `
-        <img src="${contact.avatar || contact.groupAvatar}" alt="${contact.name || contact.username} avatar" class="avatar">
+        <img src="${avatarSrc}" alt="${contact.name || contact.username} avatar" class="avatar">
         <div class="user-info">
             <h4>${contact.name || contact.username}</h4>
             <span class="${statusClass}">${statusText}${isBlocked}</span>
@@ -181,7 +188,7 @@ function createContactEl(contact, isGroup = false) {
 function renderContacts(contacts) {
     contactsList.innerHTML = '';
     
-    const friends = globalFriendsList.sort((a, b) => { // Use global list which is updated on refresh_data
+    const friends = globalFriendsList.sort((a, b) => { 
         if (a.status === 'online' && b.status !== 'online') return -1;
         if (a.status !== 'online' && b.status === 'online') return 1;
         return a.username.localeCompare(b.username);
@@ -250,7 +257,6 @@ function createMessageEl(msg) {
         el.innerHTML = contentHTML;
     }
     
-    // Context menu for PERMANENT DELETION (only sender can delete)
     if (msg.from === currentUser.id) {
         el.oncontextmenu = (e) => {
             e.preventDefault();
@@ -258,6 +264,17 @@ function createMessageEl(msg) {
                 socket.emit('delete_message', { messageId: msg.id, chatId: currentChatId, isGroup: isCurrentChatGroup });
             }
         };
+        // Fix for mobile long press
+        let timer;
+        el.ontouchstart = () => {
+            timer = setTimeout(() => {
+                if (confirm("Permanently delete this message for everyone?")) {
+                    socket.emit('delete_message', { messageId: msg.id, chatId: currentChatId, isGroup: isCurrentChatGroup });
+                }
+            }, 700); 
+        };
+        el.ontouchend = () => clearTimeout(timer);
+        el.ontouchmove = () => clearTimeout(timer);
     }
 
     return el;
@@ -267,7 +284,6 @@ function createMessageEl(msg) {
 // --- CHAT MANAGEMENT ---
 
 function openChat(contact, isGroup) {
-    // Mobile UI fix: Hide sidebar when chat is opened
     if (window.innerWidth < 768) sidebar.classList.add('hidden');
     
     document.querySelectorAll('.user-item').forEach(item => item.classList.remove('active'));
@@ -281,14 +297,16 @@ function openChat(contact, isGroup) {
     inputArea.style.display = 'flex';
     chatActionsBtn.style.display = 'block';
 
-    // Blocking logic (copied from previous response)
     const isBlocked = contact.isBlocked || false;
     const isSenderBlocked = isBlocked && contact.blockerId !== currentUser.id;
     const isReceiverBlocked = isBlocked && contact.blockerId === currentUser.id;
+    
+    // Disable inputs based on block status or if it's a group (which shouldn't be blocked)
+    const isDisabled = isBlocked && !isGroup;
 
-    msgInput.disabled = isBlocked;
-    sendBtn.disabled = isBlocked;
-    fileInput.disabled = isBlocked;
+    msgInput.disabled = isDisabled;
+    sendBtn.disabled = isDisabled;
+    fileInput.disabled = isDisabled;
 
     if (isReceiverBlocked) {
         msgInput.placeholder = "You have blocked this user.";
@@ -329,8 +347,9 @@ function setupEventListeners() {
         if (e.key === 'Enter' && !msgInput.disabled) sendBtn.click();
     });
 
-    // 2. File Upload (unchanged)
+    // 2. File Upload
     fileInput.onchange = async (e) => {
+        // ... (File Upload Logic remains the same) ...
         const file = e.target.files[0];
         if (!file || !currentChatId) return;
         
@@ -379,7 +398,7 @@ function setupEventListeners() {
     };
     document.getElementById('file-btn').onclick = () => fileInput.click();
 
-    // 3. Clipboard Paste Handler (NEW)
+    // 3. Clipboard Paste Handler
     document.addEventListener('paste', async (e) => {
         if (!currentChatId || msgInput !== document.activeElement || msgInput.disabled) return;
 
@@ -452,7 +471,6 @@ function setupEventListeners() {
 
         autocompleteDropdown.innerHTML = '';
         const inputRect = friendSearchInput.getBoundingClientRect();
-        // Set width and position relative to the input field
         autocompleteDropdown.style.width = `${inputRect.width}px`;
         autocompleteDropdown.style.top = `${inputRect.bottom}px`; 
         autocompleteDropdown.style.left = `${inputRect.left}px`;
@@ -480,7 +498,7 @@ function setupEventListeners() {
         }
     });
 
-    // 5. Chat Actions Modal (unchanged logic)
+    // 5. Chat Actions Modal
     chatActionsBtn.onclick = () => {
         if (!currentChatId) return;
         
@@ -489,12 +507,14 @@ function setupEventListeners() {
         modalBlockUserBtn.style.display = isGroup ? 'none' : 'block';
         addMemberBtn.style.display = isGroup ? 'block' : 'none';
 
-        if (!isGroup && currentChatFriendData.isBlocked) {
-            modalBlockUserBtn.innerText = 'Unblock User';
-            modalBlockUserBtn.style.color = 'var(--accent)';
-        } else {
-            modalBlockUserBtn.innerText = 'Block User';
-            modalBlockUserBtn.style.color = '#ef4444';
+        if (!isGroup) {
+            if (currentChatFriendData.isBlocked && currentChatFriendData.blockerId === currentUser.id) {
+                modalBlockUserBtn.innerText = 'Unblock User';
+                modalBlockUserBtn.style.color = 'var(--accent)';
+            } else {
+                modalBlockUserBtn.innerText = 'Block User';
+                modalBlockUserBtn.style.color = '#ef4444';
+            }
         }
 
         showModal(chatActionsModal);
@@ -510,7 +530,7 @@ function setupEventListeners() {
     };
     
     modalBlockUserBtn.onclick = () => {
-        const action = currentChatFriendData.isBlocked ? 'unblock' : 'block';
+        const action = (currentChatFriendData.isBlocked && currentChatFriendData.blockerId === currentUser.id) ? 'unblock' : 'block';
         if (confirm(`Are you sure you want to ${action} ${currentChatFriendData.username}?`)) {
             socket.emit('block_user', currentChatId);
             hideModal(chatActionsModal);
@@ -623,6 +643,25 @@ function setupEventListeners() {
         
         hideModal(addMemberModal);
     };
+
+    // 8. Log Out Handler
+    if (logoutBtn) {
+        logoutBtn.onclick = async () => {
+            if (confirm("Are you sure you want to log out?")) {
+                try {
+                    const res = await fetch('/api/logout', { method: 'POST' });
+                    if (res.ok) {
+                        window.location.href = '/login.html';
+                    } else {
+                        alert('Logout failed on server.');
+                    }
+                } catch (error) {
+                    console.error('Logout error:', error);
+                    alert('Network error during logout.');
+                }
+            }
+        };
+    }
 }
 
 

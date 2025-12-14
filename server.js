@@ -53,7 +53,7 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage });
 
-// Auth Middleware (unchanged)
+// Auth Middleware
 const requireAuth = (req, res, next) => {
     const userId = req.cookies.user_session;
     if (!userId) {
@@ -71,15 +71,62 @@ const requireAuth = (req, res, next) => {
 
 // --- ROUTES ---
 
-// Protected Routes (unchanged)
+// Protected Routes
 app.get('/', requireAuth, (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 app.get('/settings.html', requireAuth, (req, res) => res.sendFile(path.join(__dirname, 'public', 'settings.html')));
 
-// Auth API (unchanged)
-app.post('/api/register', (req, res) => { /* ... */ });
-app.post('/api/login', (req, res) => { /* ... */ });
-app.get('/api/me', requireAuth, (req, res) => { /* ... */ });
-app.post('/api/logout', (req, res) => { /* ... */ });
+// Auth API 
+app.post('/api/register', (req, res) => {
+    const { username, password } = req.body;
+    if (!username || !password) {
+        return res.status(400).json({ error: 'Username and password are required.' });
+    }
+
+    const db = getDB();
+    if (db.users.some(u => u.username === username)) {
+        return res.status(409).json({ error: 'User already exists.' });
+    }
+
+    const newUser = {
+        id: uuidv4(),
+        username,
+        password: password, 
+        avatar: `https://ui-avatars.com/api/?name=${username.substring(0,2)}&background=3b82f6&color=fff&size=128&bold=true`
+    };
+
+    db.users.push(newUser);
+    saveDB(db);
+
+    res.cookie('user_session', newUser.id, { httpOnly: true, maxAge: 1000 * 60 * 60 * 24 * 7 }); // 7 days
+    res.status(201).json({ message: 'User registered successfully', userId: newUser.id });
+});
+
+app.post('/api/login', (req, res) => {
+    const { username, password } = req.body;
+    if (!username || !password) {
+        return res.status(400).json({ error: 'Username and password are required.' });
+    }
+
+    const db = getDB();
+    const user = db.users.find(u => u.username === username && u.password === password);
+
+    if (!user) {
+        return res.status(401).json({ error: 'Invalid username or password.' });
+    }
+
+    res.cookie('user_session', user.id, { httpOnly: true, maxAge: 1000 * 60 * 60 * 24 * 7 }); // 7 days
+    res.status(200).json({ message: 'Logged in successfully', userId: user.id });
+});
+
+app.get('/api/me', requireAuth, (req, res) => { 
+    const { password, ...userSafe } = req.user;
+    res.json(userSafe);
+});
+
+app.post('/api/logout', (req, res) => {
+    res.clearCookie('user_session');
+    res.status(200).json({ message: 'Logged out successfully' });
+});
 
 // Upload Route (Media File handling)
 app.post('/api/upload', requireAuth, upload.single('file'), (req, res) => {
@@ -128,7 +175,6 @@ const sendInitialData = (socket, userId) => {
     const db = getDB();
     const currentUser = db.users.find(u => u.id === userId);
     
-    // ... (logic for requests, friends, and groups remains the same) ...
     const myRequests = db.friendships
         .filter(f => f.to === userId && f.status === 'pending')
         .map(f => ({ 
@@ -142,6 +188,8 @@ const sendInitialData = (socket, userId) => {
         .map(f => {
             const friendId = f.from === userId ? f.to : f.from;
             const friend = db.users.find(u => u.id === friendId);
+            if (!friend) return null;
+
             const { password, ...friendSafe } = friend;
             
             const isBlocked = f.blockerId === userId || f.blockerId === friendId;
@@ -149,9 +197,10 @@ const sendInitialData = (socket, userId) => {
             return { 
                 ...friendSafe, 
                 status: onlineUsers.has(friendId) ? 'online' : 'offline',
-                isBlocked: isBlocked 
+                isBlocked: isBlocked,
+                blockerId: f.blockerId || null
             };
-        });
+        }).filter(f => f !== null);
 
     const groups = getMyGroups(userId, db);
     
@@ -160,7 +209,6 @@ const sendInitialData = (socket, userId) => {
 
 
 io.on('connection', (socket) => {
-    // ... (Connection setup, auth check, joining rooms remains the same) ...
     const cookie = socket.handshake.headers.cookie;
     const userIdMatch = cookie?.split('; ').find(row => row.startsWith('user_session='));
     const userId = userIdMatch ? userIdMatch.split('=')[1] : null;
@@ -175,12 +223,19 @@ io.on('connection', (socket) => {
 
     sendInitialData(socket, userId);
 
+    // Notify friends about status change
+    db.friendships
+        .filter(f => (f.from === userId || f.to === userId) && f.status === 'accepted')
+        .forEach(f => {
+            const friendId = f.from === userId ? f.to : f.from;
+            io.to(friendId).emit('refresh_data');
+        });
+
     socket.on('refresh_data', () => sendInitialData(socket, userId));
 
-    // --- Message Handling (unchanged logic) ---
+    // --- Message Handling ---
 
     socket.on('get_history', ({ chatId, isGroup = false }) => {
-        // ... (History retrieval logic) ...
         const db = getDB();
         let history = [];
         if (isGroup) {
@@ -196,7 +251,6 @@ io.on('connection', (socket) => {
     });
 
     socket.on('send_message', (data) => {
-        // ... (Blocking check and saving message) ...
         const newMessage = {
             id: uuidv4(),
             from: userId,
@@ -242,8 +296,17 @@ io.on('connection', (socket) => {
         if (msgIndex !== -1) {
             const targetMessage = db.messages[msgIndex];
             
-            const recipients = targetMessage.isGroup ? [targetMessage.to] : [targetMessage.to, targetMessage.from].filter(id => id !== userId);
-            
+            // Recipients: target user, or all group members
+            let recipients = [];
+            if (isGroup) {
+                const group = db.groups.find(g => g.id === chatId);
+                recipients = group ? group.members.map(m => m.id) : [];
+            } else {
+                recipients = [targetMessage.to, targetMessage.from];
+            }
+            recipients = recipients.filter(id => id !== userId); // Exclude sender from recipients list for sending notification
+
+
             // Remove from DB (PERMANENT DELETE)
             db.messages.splice(msgIndex, 1);
             saveDB(db);
@@ -258,10 +321,41 @@ io.on('connection', (socket) => {
         }
     });
 
+    // --- Friend and Group Management ---
 
-    // --- Friend and Group Management (unchanged logic) ---
+    socket.on('friend_request', (username) => { /* ... */ });
+    socket.on('accept_request', (reqId) => { /* ... */ });
+    socket.on('decline_request', (reqId) => { /* ... */ });
+    socket.on('remove_friend', (friendId) => { /* ... */ });
+    
+    socket.on('block_user', (targetId) => {
+        const db = getDB();
+        const friendshipIndex = db.friendships.findIndex(f => 
+            (f.from === userId && f.to === targetId) || (f.from === targetId && f.to === userId)
+        );
 
-    // ... (Existing 'friend_request', 'accept_request', 'decline_request', 'remove_friend', 'block_user' logic) ...
+        if (friendshipIndex === -1) {
+            return socket.emit('error', 'Friendship not found.');
+        }
+
+        const friendship = db.friendships[friendshipIndex];
+        const isCurrentlyBlocked = friendship.blockerId;
+        
+        if (isCurrentlyBlocked) {
+            // Unblock
+            friendship.blockerId = null;
+            socket.emit('success', 'User unblocked.');
+        } else {
+            // Block
+            friendship.blockerId = userId;
+            socket.emit('success', 'User blocked.');
+        }
+        
+        saveDB(db);
+        // Notify both users to refresh their state
+        io.to(userId).emit('refresh_data');
+        io.to(targetId).emit('refresh_data');
+    });
 
     socket.on('create_group', ({ name, members, avatar }) => {
         const db = getDB();
@@ -332,6 +426,13 @@ io.on('connection', (socket) => {
 
     socket.on('disconnect', () => {
         onlineUsers.delete(userId);
+         // Notify friends about status change
+        db.friendships
+            .filter(f => (f.from === userId || f.to === userId) && f.status === 'accepted')
+            .forEach(f => {
+                const friendId = f.from === userId ? f.to : f.from;
+                io.to(friendId).emit('refresh_data');
+            });
     });
 });
 

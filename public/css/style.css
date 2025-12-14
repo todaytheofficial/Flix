@@ -1,5 +1,5 @@
 /**
- * style.css - Flix Messenger Styles (Final Complete Version with Mobile Fixes)
+ * style.css - Flix Messenger Styles (Final Complete Version)
  */
 
 /* --- 1. FONTS & THEMES --- */
@@ -38,7 +38,6 @@
     box-sizing: border-box; 
     margin: 0; 
     padding: 0; 
-    /* Добавляем transition только для цвета и фона для оптимизации */
     transition: background 0.3s ease, color 0.3s ease, border-color 0.3s ease; 
 }
 
@@ -99,7 +98,6 @@ button.btn-primary:hover { background: var(--accent-hover); }
     transition: transform 0.3s ease-in-out;
 }
 
-/* Мобильный фикс: скрываем сайдбар */
 .sidebar.hidden {
     transform: translateX(-100%);
 }
@@ -134,7 +132,7 @@ button.btn-primary:hover { background: var(--accent-hover); }
 
 /* Autocomplete Dropdown Styles */
 .autocomplete-dropdown {
-    position: absolute;
+    position: fixed; /* Используем fixed для надежного позиционирования над всем */
     z-index: 101; 
     max-height: 200px;
     overflow-y: auto;
@@ -143,10 +141,6 @@ button.btn-primary:hover { background: var(--accent-hover); }
     border-top: none;
     border-radius: 0 0 8px 8px;
     box-shadow: 0 5px 15px rgba(0,0,0,0.1);
-    transform: translateY(-5px); 
-    /* Fix for mobile positioning/sizing */
-    left: 1rem !important; 
-    width: calc(100% - 2rem) !important;
 }
 
 .autocomplete-item {
@@ -165,6 +159,7 @@ button.btn-primary:hover { background: var(--accent-hover); }
     flex-grow: 1;
     display: flex;
     flex-direction: column;
+    min-height: 0; /* Важно для flex-контейнеров внутри */
 }
 
 .user-list { 
@@ -250,7 +245,6 @@ button.btn-primary:hover { background: var(--accent-hover); }
     line-height: 1.4; 
     position: relative; 
     word-wrap: break-word; 
-    /* Мобильный фикс: предотвращаем горизонтальный скролл контентом внутри баббла */
     overflow: hidden; 
 }
 
@@ -279,9 +273,7 @@ button.btn-primary:hover { background: var(--accent-hover); }
 .msg img, 
 .msg video,
 .msg audio { 
-    /* Фикс: Убедитесь, что медиа не превышает ширину баббла */
     max-width: 100%; 
-    /* Фикс: Убедитесь, что высота масштабируется пропорционально */
     height: auto; 
     
     border-radius: 8px; 
@@ -424,8 +416,70 @@ button.btn-primary:hover { background: var(--accent-hover); }
     /* Десктопный фикс для Autocomplete */
     .autocomplete-dropdown {
         left: unset !important; 
-        width: 256px !important; /* Примерная ширина, чтобы соответствовать input */
-        margin-left: 1rem;
+        width: 320px; 
         border-radius: 0 0 8px 8px;
     }
+}
+
+/* --- 8. AUTHENTICATION STYLES --- */
+
+.auth-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+    padding: 20px;
+    background: var(--bg-body);
+}
+
+.auth-container .logo {
+    margin-bottom: 2rem;
+    font-size: 3rem;
+    color: var(--text-main);
+}
+
+.form-card {
+    background: var(--bg-panel);
+    padding: 30px;
+    border-radius: 12px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+    width: 100%;
+    max-width: 400px;
+}
+
+.form-card h2 {
+    font-size: 1.8rem;
+    font-weight: 700;
+    margin-bottom: 20px;
+    text-align: center;
+    color: var(--text-main);
+}
+
+#auth-form input {
+    margin-bottom: 15px;
+    padding: 15px;
+    font-size: 1rem;
+    border: 1px solid var(--border);
+    background: var(--bg-body);
+    color: var(--text-main);
+}
+
+.auth-link {
+    display: block;
+    text-align: center;
+    margin-top: 20px;
+    color: var(--accent);
+    text-decoration: none;
+    font-weight: 500;
+}
+.auth-link:hover {
+    text-decoration: underline;
+}
+
+.error-message {
+    color: #ef4444;
+    text-align: center;
+    margin-top: 10px;
+    font-weight: 500;
 }

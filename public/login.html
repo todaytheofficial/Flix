@@ -1,41 +1,37 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="light">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Flix | Login</title>
     <link rel="stylesheet" href="css/style.css">
+    <link rel="icon" href="favicon.ico" type="image/x-icon">
 </head>
 <body>
     <div class="auth-container">
-        <div class="auth-box">
-            <div class="logo">FLIX<span>.</span></div>
-            <h2 style="margin-bottom: 1rem; text-align: center;">Welcome back</h2>
-            <form id="login-form">
+        <h1 class="logo">FLIX.</h1>
+        <div class="form-card">
+            <h2>Log In</h2>
+            
+            <form id="auth-form">
                 <input type="text" id="username" placeholder="Username" required>
                 <input type="password" id="password" placeholder="Password" required>
-                <button type="submit" class="btn-primary">Sign In</button>
+                
+                <button type="submit" class="btn-primary">Log In</button>
             </form>
-            <a href="register.html" class="link">Don't have an account? Sign up</a>
+
+            <a href="register.html" class="auth-link">Don't have an account? Sign Up</a>
+            <p id="error-message" class="error-message"></p>
         </div>
     </div>
+    
+    <script src="js/auth.js"></script>
     <script>
-        // Простая логика прямо здесь для экономии файлов
-        document.getElementById('login-form').onsubmit = async (e) => {
-            e.preventDefault();
-            const res = await fetch('/api/login', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({
-                    username: document.getElementById('username').value,
-                    password: document.getElementById('password').value
-                })
-            });
-            const data = await res.json();
-            if(data.success) window.location.href = '/';
-            else alert(data.error);
-        };
-        // Check theme preference
-        if(localStorage.getItem('theme') === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
+        if (typeof initAuth === 'function') {
+            initAuth('login');
+        } else {
+             console.error('auth.js failed to load.');
+        }
     </script>
 </body>
 </html>
