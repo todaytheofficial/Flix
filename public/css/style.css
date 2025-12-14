@@ -1,6 +1,5 @@
 /**
- * style.css - Flix Messenger Styles (Final Complete Version)
- * Includes: Unified Design, Mobile First Adaptation, Modals, Requests, and Autocomplete.
+ * style.css - Flix Messenger Styles (Final Complete Version with Mobile Fixes)
  */
 
 /* --- 1. FONTS & THEMES --- */
@@ -39,6 +38,7 @@
     box-sizing: border-box; 
     margin: 0; 
     padding: 0; 
+    /* Добавляем transition только для цвета и фона для оптимизации */
     transition: background 0.3s ease, color 0.3s ease, border-color 0.3s ease; 
 }
 
@@ -50,27 +50,7 @@ body {
     overflow: hidden; 
 }
 
-/* Auth Pages */
-.auth-container { display: flex; align-items: center; justify-content: center; height: 100vh; }
-.auth-box { 
-    background: var(--bg-panel); 
-    padding: 2rem; 
-    border-radius: 16px; 
-    width: 100%; 
-    max-width: 400px; 
-    box-shadow: 0 4px 20px rgba(0,0,0,0.05); 
-    border: 1px solid var(--border); 
-}
-.logo { 
-    font-size: 1.8rem; /* Adjusted for consistency */
-    font-weight: 800; 
-    color: var(--text-main); 
-    margin-bottom: 1.5rem; 
-    text-align: center; 
-    letter-spacing: -0.5px; 
-}
-.logo span { color: var(--accent); }
-
+/* Input/Button Basics */
 input { 
     width: 100%; 
     padding: 12px; 
@@ -91,20 +71,21 @@ button.btn-primary {
     border-radius: 8px; 
     font-weight: 600; 
     cursor: pointer; 
+    display: flex; 
+    align-items: center; 
+    justify-content: center;
     transition: background 0.2s;
 }
 button.btn-primary:hover { background: var(--accent-hover); }
-.link { display: block; text-align: center; margin-top: 1rem; color: var(--text-muted); text-decoration: none; font-size: 0.9rem; }
 
-/* --- 3. MAIN APP LAYOUT (MOBILE FIRST) --- */
+/* --- 3. MAIN APP LAYOUT & SIDEBAR --- */
+
 .app-container { 
     display: flex; 
     flex-direction: column; 
     height: 100vh; 
     width: 100vw;
 }
-
-/* --- 4. SIDEBAR & CONTACTS --- */
 
 .sidebar { 
     width: 100%; 
@@ -118,6 +99,7 @@ button.btn-primary:hover { background: var(--accent-hover); }
     transition: transform 0.3s ease-in-out;
 }
 
+/* Мобильный фикс: скрываем сайдбар */
 .sidebar.hidden {
     transform: translateX(-100%);
 }
@@ -130,8 +112,9 @@ button.btn-primary:hover { background: var(--accent-hover); }
     align-items: center; 
     flex-shrink: 0;
 }
+.logo { font-size: 1.8rem; font-weight: 800; color: var(--text-main); letter-spacing: -0.5px; }
+.logo span { color: var(--accent); }
 
-/* Structure for the search/requests section */
 .requests-container {
     padding: 1rem; 
     border-bottom: 1px solid var(--border);
@@ -139,7 +122,6 @@ button.btn-primary:hover { background: var(--accent-hover); }
 }
 
 .requests-container input[type="text"] {
-    /* Style for friend search input */
     flex-grow: 1;
     padding: 10px 15px;
     border-radius: 20px;
@@ -147,14 +129,13 @@ button.btn-primary:hover { background: var(--accent-hover); }
     background: var(--bg-body);
     color: var(--text-main);
     outline: none;
-    margin-bottom: 0; /* Remove default margin */
+    margin-bottom: 0; 
 }
 
-/* Autocomplete Dropdown Styles (NEW) */
+/* Autocomplete Dropdown Styles */
 .autocomplete-dropdown {
     position: absolute;
     z-index: 101; 
-    /* Width/Left will be set dynamically in JS */
     max-height: 200px;
     overflow-y: auto;
     background: var(--bg-panel);
@@ -163,6 +144,9 @@ button.btn-primary:hover { background: var(--accent-hover); }
     border-radius: 0 0 8px 8px;
     box-shadow: 0 5px 15px rgba(0,0,0,0.1);
     transform: translateY(-5px); 
+    /* Fix for mobile positioning/sizing */
+    left: 1rem !important; 
+    width: calc(100% - 2rem) !important;
 }
 
 .autocomplete-item {
@@ -173,15 +157,9 @@ button.btn-primary:hover { background: var(--accent-hover); }
     border-bottom: 1px solid var(--border);
 }
 
-.autocomplete-item:last-child {
-    border-bottom: none;
-}
-
 .autocomplete-item:hover {
     background-color: var(--msg-received);
 }
-/* END Autocomplete Styles */
-
 
 .user-list-section {
     flex-grow: 1;
@@ -215,15 +193,10 @@ button.btn-primary:hover { background: var(--accent-hover); }
     object-fit: cover; 
     margin-right: 12px; 
 }
-
-.user-info h4 { font-size: 0.95rem; font-weight: 600; }
-.user-info span { font-size: 0.8rem; color: var(--text-muted); }
-
 .online { color: #10b981; }
 .offline { color: var(--text-muted); }
 .group { color: var(--accent); font-weight: 600; }
 
-/* Friend Requests */
 .req-item { 
     background: var(--bg-body); 
     padding: 10px; 
@@ -236,7 +209,8 @@ button.btn-primary:hover { background: var(--accent-hover); }
 .btn-small { padding: 4px 8px; font-size: 0.75rem; border-radius: 4px; border: none; cursor: pointer; }
 .btn-accept { background: var(--accent); color: white; }
 
-/* --- 5. CHAT AREA & SCROLLING FIX --- */
+
+/* --- 4. CHAT AREA & MESSAGES --- */
 
 .chat-area { 
     flex: 1; 
@@ -245,7 +219,7 @@ button.btn-primary:hover { background: var(--accent-hover); }
     background: var(--bg-body); 
     position: relative; 
     width: 100%; 
-    min-width: 0; /* Prevents overflow */
+    min-width: 0;
 }
 
 .chat-header { 
@@ -265,7 +239,7 @@ button.btn-primary:hover { background: var(--accent-hover); }
     display: flex; 
     flex-direction: column; 
     gap: 10px; 
-    min-height: 0; /* CRITICAL FIX for Flexbox scroll on mobile */
+    min-height: 0;
 }
 
 .msg { 
@@ -276,6 +250,8 @@ button.btn-primary:hover { background: var(--accent-hover); }
     line-height: 1.4; 
     position: relative; 
     word-wrap: break-word; 
+    /* Мобильный фикс: предотвращаем горизонтальный скролл контентом внутри баббла */
+    overflow: hidden; 
 }
 
 .msg.sent { 
@@ -292,15 +268,6 @@ button.btn-primary:hover { background: var(--accent-hover); }
     border-bottom-left-radius: 4px; 
 }
 
-.msg.deleted {
-    opacity: 0.6;
-    font-style: italic;
-    background: transparent !important;
-    color: var(--text-muted) !important;
-    border: 1px solid var(--border);
-    padding: 8px 14px;
-}
-
 .msg .group-sender {
     font-size: 0.8rem;
     font-weight: 600;
@@ -308,19 +275,30 @@ button.btn-primary:hover { background: var(--accent-hover); }
     margin-bottom: 5px;
 }
 
-/* Media Content Sizing */
+/* Media/Emoji Content Sizing (CRITICAL MOBILE FIX) */
 .msg img, 
 .msg video,
 .msg audio { 
+    /* Фикс: Убедитесь, что медиа не превышает ширину баббла */
     max-width: 100%; 
+    /* Фикс: Убедитесь, что высота масштабируется пропорционально */
     height: auto; 
+    
     border-radius: 8px; 
     margin-top: 5px; 
     display: block; 
 }
 
+.custom-emoji {
+    width: 24px; 
+    height: 24px;
+    vertical-align: middle;
+    display: inline-block;
+    max-width: 150px; 
+    height: auto;
+}
 
-/* --- 6. INPUT AREA & BUTTONS --- */
+/* --- 5. INPUT AREA & UTILITIES --- */
 
 .chat-input-area { 
     padding: 1rem; 
@@ -364,46 +342,10 @@ button.btn-primary:hover { background: var(--accent-hover); }
     justify-content: center; 
 }
 
-/* Progress Bar */
 .progress-container { height: 4px; width: 100%; background: var(--bg-body); position: absolute; top: 0; display: none; z-index: 10; }
 .progress-bar { height: 100%; background: var(--accent); width: 0%; transition: width 0.2s; }
 
-
-/* --- 7. SETTINGS PAGE --- */
-.settings-container { 
-    max-width: 600px; 
-    margin: 50px auto; 
-    padding: 2rem; 
-    background: var(--bg-panel); 
-    border-radius: 16px; 
-    border: 1px solid var(--border); 
-    width: 90%; 
-    height: auto;
-    overflow-y: auto;
-}
-
-.settings-row { 
-    display: flex; 
-    justify-content: space-between; 
-    align-items: center; 
-    margin-bottom: 1.5rem; 
-    padding-bottom: 1rem; 
-    border-bottom: 1px solid var(--border); 
-    flex-wrap: wrap; 
-}
-.settings-row > div:first-child { 
-    margin-right: 10px;
-    min-width: 150px; 
-}
-.settings-row form,
-.settings-row select,
-.settings-row button {
-    margin-top: 10px; 
-    flex-shrink: 0;
-}
-
-
-/* --- 8. MODALS --- */
+/* --- 6. MODALS --- */
 
 .modal {
     display: none; 
@@ -413,7 +355,6 @@ button.btn-primary:hover { background: var(--accent-hover); }
     top: 0;
     width: 100%;
     height: 100%;
-    overflow: auto;
     background-color: rgba(0, 0, 0, 0.6); 
     justify-content: center;
     align-items: center;
@@ -448,21 +389,10 @@ button.btn-primary:hover { background: var(--accent-hover); }
     background-color: var(--msg-received);
 }
 
-#group-creation-modal input,
-#group-member-list {
-    margin-top: 8px;
-    border-radius: 8px;
-}
-#group-creation-modal input[type="url"] {
-    margin-bottom: 10px;
-}
+/* --- 7. RESPONSIVE ADAPTATION --- */
 
-
-/* --- 9. RESPONSIVE ADAPTATION (Desktop/Tablet) --- */
-
-/* Mobile Menu Button */
 .mobile-menu-btn {
-    display: block; /* Show on mobile */
+    display: block; 
     background: none;
     border: none;
     cursor: pointer;
@@ -470,10 +400,6 @@ button.btn-primary:hover { background: var(--accent-hover); }
     color: var(--text-main);
     margin-right: 15px;
 }
-.chat-header h3 { 
-    margin-left: 0; 
-}
-
 
 @media (min-width: 768px) {
     .app-container { 
@@ -493,12 +419,13 @@ button.btn-primary:hover { background: var(--accent-hover); }
         flex: 1; 
     }
     
-    .messages { 
-        padding: 1.5rem; 
-        min-height: auto;
-    }
-
-    /* Show main logo and hide mobile menu button */
-    .sb-header .logo { display: block; }
     .mobile-menu-btn { display: none; }
+    
+    /* Десктопный фикс для Autocomplete */
+    .autocomplete-dropdown {
+        left: unset !important; 
+        width: 256px !important; /* Примерная ширина, чтобы соответствовать input */
+        margin-left: 1rem;
+        border-radius: 0 0 8px 8px;
+    }
 }

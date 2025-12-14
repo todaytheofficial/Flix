@@ -16,12 +16,13 @@
                 <a href="/settings.html"><i data-lucide="settings" color="var(--text-muted)"></i></a>
             </div>
             
-            <div class="requests-container"> <div style="display:flex; gap:5px; margin-bottom: 10px;">
+            <div class="requests-container">
+                <div style="display:flex; gap:5px; margin-bottom: 10px;">
                     <input type="text" id="friend-search" placeholder="Search or add friend by username...">
                     <button id="add-friend-btn" class="btn-primary" style="width: auto; padding: 0 12px; height: 40px; line-height: 40px;">+</button>
                 </div>
                 
-                <div id="requests-toggle" style="font-weight: 600; cursor: pointer; color: var(--accent); font-size: 0.9rem; padding: 5px 0; display: flex; align-items: center; gap: 5px;">
+                <div id="requests-toggle" data-open="false" style="font-weight: 600; cursor: pointer; color: var(--accent); font-size: 0.9rem; padding: 5px 0; display: flex; align-items: center; gap: 5px;">
                     <i data-lucide="bell" style="width: 16px; height: 16px;"></i> Friend Requests (<span id="req-count">0</span>)
                 </div>
                 <div id="requests-list" style="display: none; padding: 5px 0;">
@@ -63,6 +64,7 @@
         <div id="chat-actions-modal" class="modal">
             <div class="modal-content">
                 <h4>Chat Options</h4>
+                <button class="btn-modal" id="add-member-btn" style="display:none;">Add Member</button>
                 <button class="btn-modal" id="modal-remove-friend">Remove Friend</button>
                 <button class="btn-modal" id="modal-block-user" style="color: #ef4444;">Block User</button>
                 <button class="btn-modal" id="modal-delete-chat">Delete Chat History (Local)</button>
@@ -74,12 +76,30 @@
             <div class="modal-content">
                 <h4>Create Group</h4>
                 <input type="text" id="group-name-input" placeholder="Group Name" required>
-                <input type="url" id="group-avatar-input" placeholder="Group Avatar URL (Optional)">
+                
+                <label for="group-avatar-upload" class="btn-primary" style="margin-top: 10px; display: block; text-align: center; cursor: pointer;">
+                    <i data-lucide="upload" style="width: 16px; height: 16px; margin-right: 5px;"></i> Upload Group Avatar (File)
+                </label>
+                <input type="file" id="group-avatar-upload" accept="image/*" hidden>
+                
+                <input type="url" id="group-avatar-input" placeholder="Group Avatar URL (Optional Fallback)">
+                
                 <p style="margin-top: 10px;">Select Members:</p>
                 <div id="group-member-list" style="max-height: 150px; overflow-y: auto; padding: 10px; border: 1px solid var(--border); border-radius: 8px;">
                     </div>
                 <button id="submit-group-btn" class="btn-primary" style="margin-top: 15px;">Create</button>
                 <button class="btn-modal" id="modal-close-group">Cancel</button>
+            </div>
+        </div>
+        
+        <div id="add-member-modal" class="modal">
+            <div class="modal-content">
+                <h4>Add Members to Group</h4>
+                <p style="margin-top: 10px;">Select Friends to Add:</p>
+                <div id="add-member-list" style="max-height: 200px; overflow-y: auto; padding: 10px; border: 1px solid var(--border); border-radius: 8px;">
+                    </div>
+                <button id="submit-add-member" class="btn-primary" style="margin-top: 15px;">Add Selected Members</button>
+                <button class="btn-modal" id="modal-close-add-member">Cancel</button>
             </div>
         </div>
 
