@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <title>Flix | Messenger</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="css/style.css">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="/socket.io/socket.io.js"></script>
+</head>
+<body>
+    <div class="app-container">
+        <aside class="sidebar">
+            <div class="sb-header">
+                <div class="logo">FLIX<span>.</span></div>
+                <a href="/settings.html"><i data-lucide="settings" color="var(--text-muted)"></i></a>
+            </div>
+            
+            <div style="padding: 1rem; border-bottom: 1px solid var(--border);">
+                <div style="display:flex; gap:5px; margin-bottom: 10px;">
+                    <input type="text" id="friend-search" placeholder="Search or add friend by username...">
+                    <button id="add-friend-btn" class="btn-primary" style="width: auto; padding: 0 12px; height: 40px; line-height: 40px;">+</button>
+                </div>
+                
+                <div id="requests-toggle" style="font-weight: 600; cursor: pointer; color: var(--accent); font-size: 0.9rem; padding: 5px 0; display: flex; align-items: center; gap: 5px;">
+                    <i data-lucide="bell" style="width: 16px; height: 16px;"></i> Friend Requests (<span id="req-count">0</span>)
+                </div>
+                <div id="requests-list" style="display: none; padding: 5px 0;">
+                    </div>
+            </div>
+
+            <div class="user-list" id="contacts-list">
+                </div>
+        </aside>
+
+        <main class="chat-area">
+            <div class="progress-container"><div class="progress-bar" id="upload-bar"></div></div>
+            
+            <div class="chat-header">
+                <button id="mobile-menu-toggle" class="mobile-menu-btn"><i data-lucide="menu"></i></button>
+                <h3 id="chat-title">Select a chat</h3>
+            </div>
+            
+            <div class="messages" id="messages-area">
+                <div style="text-align:center; color: var(--text-muted); margin-top: 50px;">
+                    Welcome to Flix.<br>Select a friend to start messaging.
+                </div>
+            </div>
+
+            <div class="chat-input-area" id="input-area" style="display:none;">
+                <input type="file" id="file-input" hidden>
+                <button id="file-btn"><i data-lucide="paperclip"></i></button>
+                <input type="text" id="msg-input" placeholder="Type a message..." autocomplete="off">
+                <button id="send-btn"><i data-lucide="send"></i></button>
+            </div>
+        </main>
+    </div>
+    <script src="js/client.js"></script>
+    <script>lucide.createIcons();</script>
+</body>
+</html>
