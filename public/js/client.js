@@ -8,7 +8,7 @@ let isCurrentChatGroup = false;
 let currentChatFriendData = null; 
 let globalFriendsList = []; 
 
-// --- DOM Elements (Устойчивы к null, если элементы не существуют на странице) ---
+// --- DOM Elements ---
 const sidebar = document.querySelector('.sidebar');
 const contactsList = document.getElementById('contacts-list');
 const messagesArea = document.getElementById('messages-area');
@@ -23,7 +23,6 @@ const mobileMenuToggle = document.getElementById('mobile-menu-toggle');
 const chatActionsBtn = document.getElementById('chat-actions-btn');
 const logoutBtn = document.getElementById('logout-btn');
 
-
 // Request/Friend Search Elements
 const friendSearchInput = document.getElementById('friend-search');
 const addFriendBtn = document.getElementById('add-friend-btn');
@@ -31,7 +30,6 @@ const requestsToggle = document.getElementById('requests-toggle');
 const requestsList = document.getElementById('requests-list');
 const reqCountEl = document.getElementById('req-count');
 const autocompleteDropdown = document.querySelector('.autocomplete-dropdown');
-
 
 // Modal Elements
 const chatActionsModal = document.getElementById('chat-actions-modal');
@@ -56,6 +54,111 @@ const submitAddMember = document.getElementById('submit-add-member');
 const modalCloseAddMember = document.getElementById('modal-close-add-member');
 
 
+// --- UTILITIES & RENDERING FUNCTIONS (ПЕРЕМЕЩЕНЫ ВВЕРХ для устранения ReferenceError) ---
+
+function scrollToBottom() {
+    if (messagesArea) {
+        messagesArea.scrollTop = messagesArea.scrollHeight;
+    }
+}
+
+function showModal(modalElement) {
+    if (modalElement) modalElement.classList.add('active');
+}
+
+function hideModal(modalElement) {
+    if (modalElement) modalElement.classList.remove('active');
+}
+
+function replaceEmojis(text) {
+    return text.replace(/:\)/g, '😊').replace(/:\(/g, '😞').replace(/<3/g, '❤️').replace(/:D/g, '😁');
+}
+
+function createContactEl(contact, isGroup = false) {
+    const li = document.createElement('li');
+    li.className = 'user-item';
+    li.setAttribute('onclick', `openChat({ id: '${contact.id}', username: '${contact.username || contact.name}', avatar: '${contact.avatar}', status: '${contact.status || ''}', isBlocked: ${!!contact.isBlocked}, blockerId: '${contact.blockerId || ''}' }, ${isGroup})`);
+    
+    // Активация, если это текущий чат
+    if (contact.id === currentChatId) li.classList.add('active');
+
+    li.innerHTML = `
+        <img src="${contact.avatar}" alt="${contact.username || contact.name}" class="avatar">
+        <div class="user-info">
+            <h4>${contact.username || contact.name}</h4>
+            <p>${isGroup ? 'Group Chat' : (contact.lastMessage || 'No messages yet')}</p>
+        </div>
+        ${!isGroup ? `<div class="user-status ${contact.status || 'offline'}"></div>` : ''}
+    `;
+    return li;
+}
+
+function renderContacts(contacts) {
+    if (!contactsList) return;
+    contactsList.innerHTML = '';
+    contacts.forEach(contact => {
+        const isGroup = !!contact.members;
+        contactsList.appendChild(createContactEl(contact, isGroup));
+    });
+}
+
+function renderRequests(requests) {
+    if (!requestsList || !reqCountEl) return;
+    requestsList.innerHTML = '';
+    reqCountEl.textContent = requests.length > 0 ? requests.length : '';
+    reqCountEl.style.display = requests.length > 0 ? 'flex' : 'none';
+
+    if (requests.length === 0) {
+        requestsList.innerHTML = '<li class="no-requests">No pending requests.</li>';
+        return;
+    }
+    
+    requests.forEach(req => {
+        const li = document.createElement('li');
+        li.className = 'request-item';
+        li.innerHTML = `
+            <span>${req.fromName}</span>
+            <div>
+                <button class="btn-accept" onclick="socket.emit('accept_request', '${req.id}')">Accept</button>
+                <button class="btn-decline" onclick="socket.emit('decline_request', '${req.id}')">Decline</button>
+            </div>
+        `;
+        requestsList.appendChild(li);
+    });
+}
+
+function createMessageEl(msg) {
+    const isMine = msg.from === currentUser.id;
+    const div = document.createElement('div');
+    div.className = `message-bubble ${isMine ? 'mine' : 'theirs'}`;
+    div.id = `msg-${msg.id}`;
+
+    let contentHTML = '';
+    const time = new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    
+    if (msg.type.startsWith('image')) {
+        contentHTML = `<img src="${msg.content}" style="max-width: 100%; max-height: 250px; border-radius: 8px;" onclick="window.open(this.src)">`;
+    } else if (msg.type.startsWith('video')) {
+        contentHTML = `<video src="${msg.content}" controls style="max-width: 100%; max-height: 250px; border-radius: 8px;"></video>`;
+    } else if (msg.type !== 'text') {
+        contentHTML = `<a href="${msg.content}" target="_blank" style="color: var(--text-link);">File: ${msg.content.substring(msg.content.lastIndexOf('/') + 1)}</a>`;
+    } else {
+        contentHTML = `<p>${replaceEmojis(msg.content)}</p>`;
+    }
+
+    div.innerHTML = `
+        <div class="message-content">
+            ${msg.isGroup && !isMine ? `<small class="msg-sender">${msg.senderName || 'User'}</small>` : ''}
+            ${contentHTML}
+            <small class="msg-time">${time}</small>
+        </div>
+        ${isMine ? `<span class="delete-icon" onclick="socket.emit('delete_message', { messageId: '${msg.id}', chatId: currentChatId, isGroup: isCurrentChatGroup })">🗑️</span>` : ''}
+    `;
+
+    return div;
+}
+
+
 // --- CORE INITIALIZATION & THEME FIX ---
 
 const storedTheme = localStorage.getItem('theme');
@@ -73,7 +176,6 @@ async function init() {
     }
     currentUser = await res.json();
     
-    // ПРОВЕРКА: предотвращение ошибки TypeError, если sidebar не найден (например, на login.html)
     if (sidebar && window.innerWidth < 768) {
         sidebar.classList.add('hidden'); 
     }
@@ -88,7 +190,7 @@ init();
 socket.on('init_data', (data) => {
     currentUser = data.currentUser;
     globalFriendsList = data.friends; 
-    renderRequests(data.requests);
+    renderRequests(data.requests); 
     renderContacts([...data.friends, ...data.groups]);
     if (currentChatId && !isCurrentChatGroup) {
         const updatedFriend = data.friends.find(f => f.id === currentChatId);
@@ -149,10 +251,6 @@ socket.on('success', (message) => {
 });
 
 
-// --- UI RENDERING FUNCTIONS ---
-// ... (replaceEmojis, createContactEl, renderContacts, renderRequests, createMessageEl - unchanged) ...
-
-
 // --- CHAT MANAGEMENT ---
 
 function openChat(contact, isGroup) {
@@ -201,7 +299,6 @@ function openChat(contact, isGroup) {
 
 
 // --- MODAL & ACTION HANDLERS ---
-// ... (showModal, hideModal - unchanged) ...
 
 function setupEventListeners() {
     if (mobileMenuToggle) mobileMenuToggle.onclick = () => sidebar.classList.toggle('hidden');
@@ -283,7 +380,6 @@ function setupEventListeners() {
     }
 
     // 3. Clipboard Paste Handler
-    // ... (unchanged paste logic, relies on input elements being non-null) ...
     document.addEventListener('paste', async (e) => {
         if (!currentChatId || msgInput !== document.activeElement || msgInput.disabled) return;
 
@@ -327,7 +423,7 @@ function setupEventListeners() {
         }
     });
 
-    // 4. Friend Search & Autocomplete (Обернуто в проверки для предотвращения TypeError)
+    // 4. Friend Search & Autocomplete
     if (addFriendBtn && friendSearchInput && autocompleteDropdown && requestsToggle) {
         
         addFriendBtn.onclick = () => {
@@ -355,7 +451,6 @@ function setupEventListeners() {
             const res = await fetch(`/api/search_users?query=${encodeURIComponent(query)}`);
             const users = await res.json();
 
-            // ИСПРАВЛЕНО: autocompleteDropdown гарантированно не null
             autocompleteDropdown.innerHTML = ''; 
             
             const inputRect = friendSearchInput.getBoundingClientRect();
@@ -411,7 +506,6 @@ function setupEventListeners() {
         };
     }
     
-    // ... (modal handlers - wrapped in checks) ...
     if (modalCloseBtn) modalCloseBtn.onclick = () => hideModal(chatActionsModal);
     if (modalRemoveFriendBtn) {
         modalRemoveFriendBtn.onclick = () => {
@@ -447,16 +541,67 @@ function setupEventListeners() {
                 groupMemberList.innerHTML = '<p style="color:var(--text-muted);">Add friends first to create a group.</p>';
             } else {
                 globalFriendsList.forEach(friend => {
-                    // ... (creation logic) ...
+                    const li = document.createElement('li');
+                    li.innerHTML = `<label><input type="checkbox" data-id="${friend.id}"> ${friend.username}</label>`;
+                    groupMemberList.appendChild(li);
                 });
             }
-            showModal(groupCreationModal);
+            showModal(groupCreationModal); 
         };
     }
-    // ... (group modal handlers - wrapped in checks) ...
+    if (modalCloseGroupBtn) modalCloseGroupBtn.onclick = () => hideModal(groupCreationModal);
+    if (submitGroupBtn) {
+        submitGroupBtn.onclick = () => {
+            const name = groupNameInput.value.trim();
+            let avatar = groupAvatarInput.value.trim();
+            const members = Array.from(groupMemberList.querySelectorAll('input[type="checkbox"]:checked')).map(cb => cb.getAttribute('data-id'));
+
+            if (!name || members.length === 0) {
+                return alert('Group name and at least one member are required.');
+            }
+            
+            socket.emit('create_group', { name, members, avatar });
+            hideModal(groupCreationModal);
+        };
+    }
 
     // 7. Add Member Modal
-    // ... (add member logic - wrapped in checks) ...
+    if (addMemberBtn) {
+        addMemberBtn.onclick = () => {
+            if (!currentChatId || !isCurrentChatGroup || !addMemberModal || !addMemberList) return;
+            
+            const currentGroup = globalFriendsList.find(c => c.id === currentChatId);
+            if (!currentGroup) return;
+
+            addMemberList.innerHTML = '';
+            const availableFriends = globalFriendsList.filter(f => !currentGroup.members.some(m => m.id === f.id));
+
+            if (availableFriends.length === 0) {
+                addMemberList.innerHTML = '<p style="color:var(--text-muted);">All friends are already in this group.</p>';
+            } else {
+                availableFriends.forEach(friend => {
+                    const li = document.createElement('li');
+                    li.innerHTML = `<label><input type="checkbox" data-id="${friend.id}"> ${friend.username}</label>`;
+                    addMemberList.appendChild(li);
+                });
+            }
+            hideModal(chatActionsModal); // Скрываем модалку действий чата
+            showModal(addMemberModal);
+        };
+    }
+    if (modalCloseAddMember) modalCloseAddMember.onclick = () => hideModal(addMemberModal);
+    if (submitAddMember) {
+        submitAddMember.onclick = () => {
+            const membersToAdd = Array.from(addMemberList.querySelectorAll('input[type="checkbox"]:checked')).map(cb => cb.getAttribute('data-id'));
+
+            if (membersToAdd.length === 0) {
+                return alert('Select at least one member to add.');
+            }
+            
+            socket.emit('add_members_to_group', { groupId: currentChatId, membersToAdd });
+            hideModal(addMemberModal);
+        };
+    }
 
     // 8. Log Out Handler
     if (logoutBtn) {
@@ -475,14 +620,5 @@ function setupEventListeners() {
                 }
             }
         };
-    }
-}
-
-
-// --- UTILITIES ---
-
-function scrollToBottom() {
-    if (messagesArea) {
-        messagesArea.scrollTop = messagesArea.scrollHeight;
     }
 }

@@ -24,10 +24,20 @@
             <hr style="border: 0; border-top: 1px solid var(--border); margin: 20px 0;">
 
             <h3>Update Avatar</h3>
-            <p style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 15px;">Paste a direct image URL (e.g., from Imgur, or the URL of a previously uploaded file).</p>
+            <p style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 15px;">
+                Upload from device or paste a direct image URL.
+            </p>
             
             <form id="avatar-form">
-                <input type="url" id="avatar-url-input" placeholder="New Avatar URL (http://...)" required>
+                <label for="avatar-file-input" class="btn-secondary" style="margin-bottom: 10px; display: block; text-align: center; cursor: pointer;">
+                    Upload from Device
+                </label>
+                <input type="file" id="avatar-file-input" style="display: none;" accept="image/*">
+                
+                <hr style="border: 0; border-top: 1px dashed var(--border); margin: 20px 0;">
+                
+                <input type="url" id="avatar-url-input" placeholder="Or paste Image URL (http://...)" style="margin-bottom: 15px;">
+                
                 <button type="button" id="update-avatar-btn" class="btn-primary">Update Avatar</button>
             </form>
 
