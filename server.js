@@ -1,5 +1,5 @@
 /**
- * server.js - Flix Backend (FINAL COMPLETE VERSION)
+ * server.js - Flix Backend (FINAL COMPLETE VERSION with all Fixes)
  */
 const express = require('express');
 const http = require('http');
@@ -52,7 +52,7 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage });
 
-// Auth Middleware (Исправлено для корректной обработки API-запросов)
+// Auth Middleware 
 const requireAuth = (req, res, next) => {
     const userId = req.cookies.user_session;
     
@@ -111,7 +111,7 @@ app.post('/api/register', (req, res) => {
 app.post('/api/login', (req, res) => {
     const { username, password } = req.body;
     if (!username || !password) {
-        return res.status(400).json({ error: 'Username and password are required.' });
+        return res.status(400).json({ error: 'Username or password missing.' });
     }
 
     const db = getDB();
@@ -135,7 +135,7 @@ app.post('/api/logout', (req, res) => {
     res.status(200).json({ message: 'Logged out successfully' });
 });
 
-// Upload Route
+// Upload Route (Used for both chat files and avatar files)
 app.post('/api/upload', requireAuth, upload.single('file'), (req, res) => {
     if (!req.file) return res.status(400).json({ error: 'No file' });
     res.json({ 
@@ -307,12 +307,21 @@ io.on('connection', (socket) => {
         }
         
         const db = getDB(); 
+        
+        // Добавляем имя отправителя для групповых сообщений
+        if (newMessage.isGroup) {
+            const sender = db.users.find(u => u.id === userId);
+            if (sender) newMessage.senderName = sender.username;
+        }
+        
         db.messages.push(newMessage); 
         saveDB(db); 
 
         if (newMessage.isGroup) {
+            // Отправляем всем членам группы
             io.to(newMessage.to).emit('new_message', newMessage);
         } else {
+            // Отправляем получателю и себе (для подтверждения)
             io.to(newMessage.to).emit('new_message', newMessage);
             socket.emit('message_sent', newMessage);
         }
@@ -346,13 +355,108 @@ io.on('connection', (socket) => {
         }
     });
 
-    // --- Friend and Group Management ---
+    // --- Friend and Group Management (ПОЛНАЯ ИСПРАВЛЕННАЯ ЛОГИКА) ---
 
-    socket.on('friend_request', (username) => { /* ... */ });
-    socket.on('accept_request', (reqId) => { /* ... */ });
-    socket.on('decline_request', (reqId) => { /* ... */ });
-    socket.on('remove_friend', (friendId) => { /* ... */ });
+    socket.on('friend_request', (username) => {
+        const db = getDB();
+        const targetUser = db.users.find(u => u.username === username);
+
+        if (!targetUser) {
+            return socket.emit('error', 'User not found.');
+        }
+        if (targetUser.id === userId) {
+            return socket.emit('error', 'Cannot send a friend request to yourself.');
+        }
+
+        const existing = db.friendships.find(f =>
+            (f.from === userId && f.to === targetUser.id) ||
+            (f.from === targetUser.id && f.to === userId)
+        );
+
+        if (existing) {
+            if (existing.status === 'accepted') return socket.emit('error', 'You are already friends.');
+            if (existing.status === 'pending' && existing.from === userId) return socket.emit('error', 'Request already sent.');
+            if (existing.status === 'pending' && existing.from === targetUser.id) {
+                // Взаимный запрос: автоматически принимаем
+                existing.status = 'accepted';
+                saveDB(db);
+                io.to(userId).emit('success', 'Friend added!');
+                io.to(targetUser.id).emit('success', 'Friend added!');
+                io.to(userId).emit('refresh_data');
+                io.to(targetUser.id).emit('refresh_data');
+                return;
+            }
+        }
+        
+        // Создаем новый запрос
+        const newRequest = {
+            id: uuidv4(),
+            from: userId,
+            to: targetUser.id,
+            status: 'pending'
+        };
+        db.friendships.push(newRequest);
+        saveDB(db);
+
+        io.to(targetUser.id).emit('refresh_data'); 
+        socket.emit('success', 'Friend request sent.');
+    });
+
+    socket.on('accept_request', (requestId) => {
+        const db = getDB();
+        const friendship = db.friendships.find(f => f.id === requestId && f.to === userId && f.status === 'pending');
+
+        if (!friendship) {
+            return socket.emit('error', 'Request not found or already processed.');
+        }
+
+        friendship.status = 'accepted';
+        saveDB(db);
+
+        io.to(userId).emit('success', 'Request accepted. Friend added!');
+        io.to(friendship.from).emit('success', 'Request accepted. Friend added!');
+        io.to(userId).emit('refresh_data');
+        io.to(friendship.from).emit('refresh_data');
+    });
+
+    socket.on('decline_request', (requestId) => {
+        const db = getDB();
+        const friendshipIndex = db.friendships.findIndex(f => f.id === requestId && f.to === userId && f.status === 'pending');
+
+        if (friendshipIndex === -1) {
+            return socket.emit('error', 'Request not found or already processed.');
+        }
+
+        const senderId = db.friendships[friendshipIndex].from;
+        db.friendships.splice(friendshipIndex, 1); 
+        saveDB(db);
+
+        io.to(userId).emit('success', 'Request declined.');
+        io.to(senderId).emit('refresh_data');
+        io.to(userId).emit('refresh_data');
+    });
     
+    socket.on('remove_friend', (friendId) => {
+        const db = getDB();
+        const friendshipIndex = db.friendships.findIndex(f => 
+            (f.from === userId && f.to === friendId && f.status === 'accepted') || 
+            (f.from === friendId && f.to === userId && f.status === 'accepted')
+        );
+
+        if (friendshipIndex === -1) {
+            return socket.emit('error', 'Friendship not found.');
+        }
+
+        db.friendships.splice(friendshipIndex, 1);
+        saveDB(db);
+
+        io.to(userId).emit('success', 'Friend removed.');
+        io.to(friendId).emit('success', 'Friend removed by partner.');
+        io.to(userId).emit('refresh_data');
+        io.to(friendId).emit('refresh_data');
+    });
+
+
     socket.on('block_user', (targetId) => {
         const db = getDB();
         const friendshipIndex = db.friendships.findIndex(f => 
@@ -360,7 +464,7 @@ io.on('connection', (socket) => {
         );
 
         if (friendshipIndex === -1) {
-            return socket.emit('error', 'Friendship not found.');
+            return socket.emit('error', 'You can only block current friends.');
         }
 
         const friendship = db.friendships[friendshipIndex];
@@ -383,9 +487,17 @@ io.on('connection', (socket) => {
         const db = getDB();
         
         const allMembers = Array.from(new Set([...members, userId]));
-        const memberObjects = allMembers.map(id => ({ id, name: db.users.find(u => u.id === id)?.username }));
-
-        if (memberObjects.length < 2) return socket.emit('error', 'Group needs at least two members (including you).');
+        
+        if (allMembers.length < 2) return socket.emit('error', 'Group needs at least two members (including you).');
+        
+        const memberObjects = allMembers.map(id => {
+            const user = db.users.find(u => u.id === id);
+            return user ? { id: user.id, name: user.username } : null;
+        }).filter(m => m !== null);
+        
+        if (memberObjects.length !== allMembers.length) {
+             return socket.emit('error', 'One or more selected users were not found.');
+        }
 
         const newGroup = {
             id: uuidv4(),
