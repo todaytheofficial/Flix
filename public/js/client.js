@@ -1,5 +1,5 @@
 /**
- * client.js - Flix Client Logic (FINAL COMPLETE VERSION)
+ * client.js - Flix Client Logic (FINAL COMPLETE VERSION with all Mechanics)
  */
 const socket = io();
 let currentUser = null;
@@ -54,7 +54,7 @@ const submitAddMember = document.getElementById('submit-add-member');
 const modalCloseAddMember = document.getElementById('modal-close-add-member');
 
 
-// --- UTILITIES & RENDERING FUNCTIONS (ПЕРЕМЕЩЕНЫ ВВЕРХ для устранения ReferenceError) ---
+// --- UTILITIES & RENDERING FUNCTIONS (ОБЯЗАТЕЛЬНО ДОЛЖНЫ БЫТЬ ВВЕРХУ) ---
 
 function scrollToBottom() {
     if (messagesArea) {
@@ -76,19 +76,26 @@ function replaceEmojis(text) {
 
 function createContactEl(contact, isGroup = false) {
     const li = document.createElement('li');
+    // Экранирование строк для правильной работы onclick
+    const avatarSrc = contact.avatar ? contact.avatar.replace(/'/g, "\\'") : '';
+    const name = (contact.username || contact.name).replace(/'/g, "\\'");
+    const status = contact.status || '';
+    const isBlocked = !!contact.isBlocked;
+    const blockerId = contact.blockerId || '';
+    
     li.className = 'user-item';
-    li.setAttribute('onclick', `openChat({ id: '${contact.id}', username: '${contact.username || contact.name}', avatar: '${contact.avatar}', status: '${contact.status || ''}', isBlocked: ${!!contact.isBlocked}, blockerId: '${contact.blockerId || ''}' }, ${isGroup})`);
+    li.setAttribute('onclick', `openChat({ id: '${contact.id}', username: '${name}', avatar: '${avatarSrc}', status: '${status}', isBlocked: ${isBlocked}, blockerId: '${blockerId}' }, ${isGroup})`);
     
     // Активация, если это текущий чат
     if (contact.id === currentChatId) li.classList.add('active');
 
     li.innerHTML = `
-        <img src="${contact.avatar}" alt="${contact.username || contact.name}" class="avatar">
+        <img src="${avatarSrc}" alt="${name}" class="avatar">
         <div class="user-info">
-            <h4>${contact.username || contact.name}</h4>
+            <h4>${name}</h4>
             <p>${isGroup ? 'Group Chat' : (contact.lastMessage || 'No messages yet')}</p>
         </div>
-        ${!isGroup ? `<div class="user-status ${contact.status || 'offline'}"></div>` : ''}
+        ${!isGroup ? `<div class="user-status ${status}"></div>` : ''}
     `;
     return li;
 }
@@ -108,6 +115,10 @@ function renderRequests(requests) {
     reqCountEl.textContent = requests.length > 0 ? requests.length : '';
     reqCountEl.style.display = requests.length > 0 ? 'flex' : 'none';
 
+    // Устанавливаем отображение в зависимости от состояния 'data-open'
+    const isOpen = requestsToggle.getAttribute('data-open') === 'true';
+    requestsList.style.display = isOpen ? 'block' : 'none';
+
     if (requests.length === 0) {
         requestsList.innerHTML = '<li class="no-requests">No pending requests.</li>';
         return;
@@ -116,11 +127,13 @@ function renderRequests(requests) {
     requests.forEach(req => {
         const li = document.createElement('li');
         li.className = 'request-item';
+        // Экранируем ID, чтобы избежать ошибок в onclick
+        const escapedId = req.id.replace(/'/g, "\\'");
         li.innerHTML = `
             <span>${req.fromName}</span>
             <div>
-                <button class="btn-accept" onclick="socket.emit('accept_request', '${req.id}')">Accept</button>
-                <button class="btn-decline" onclick="socket.emit('decline_request', '${req.id}')">Decline</button>
+                <button class="btn-accept" onclick="socket.emit('accept_request', '${escapedId}')">Accept</button>
+                <button class="btn-decline" onclick="socket.emit('decline_request', '${escapedId}')">Decline</button>
             </div>
         `;
         requestsList.appendChild(li);
@@ -196,6 +209,7 @@ socket.on('init_data', (data) => {
         const updatedFriend = data.friends.find(f => f.id === currentChatId);
         if (updatedFriend) {
             currentChatFriendData = updatedFriend;
+            // Обновляем чат, чтобы отразить статус блокировки/онлайна
             openChat(updatedFriend, false); 
         }
     }
@@ -245,7 +259,7 @@ socket.on('error', (message) => {
 
 socket.on('success', (message) => {
     console.log(`Success: ${message}`);
-    if (message.includes('Friend added') || message.includes('Request declined') || message.includes('Group created') || message.includes('members added') || message.includes('blocked') || message.includes('unblocked')) {
+    if (message.includes('Friend added') || message.includes('Request declined') || message.includes('Group created') || message.includes('members added') || message.includes('blocked') || message.includes('unblocked') || message.includes('removed')) {
          socket.emit('refresh_data');
     }
 });
@@ -271,6 +285,7 @@ function openChat(contact, isGroup) {
     if (chatActionsBtn) chatActionsBtn.style.display = 'block';
 
     const isBlocked = contact.isBlocked || false;
+    // Проверяем, заблокировали ли мы его, или он нас. blockerId === currentUser.id означает, что заблокировали мы.
     const isSenderBlocked = isBlocked && contact.blockerId !== currentUser.id;
     const isReceiverBlocked = isBlocked && contact.blockerId === currentUser.id;
     
@@ -290,7 +305,6 @@ function openChat(contact, isGroup) {
         }
     }
 
-
     if (messagesArea) {
         messagesArea.innerHTML = '<div style="text-align:center; padding: 20px;">Loading history...</div>';
     }
@@ -303,7 +317,7 @@ function openChat(contact, isGroup) {
 function setupEventListeners() {
     if (mobileMenuToggle) mobileMenuToggle.onclick = () => sidebar.classList.toggle('hidden');
 
-    // 1. Send Message
+    // 1. Send Message (UNCHANGED)
     if (sendBtn) {
         sendBtn.onclick = () => {
             const content = msgInput.value.trim();
@@ -325,7 +339,7 @@ function setupEventListeners() {
         });
     }
 
-    // 2. File Upload
+    // 2. File Upload (UNCHANGED)
     if (fileInput) {
         fileInput.onchange = async (e) => {
             const file = e.target.files[0];
@@ -378,8 +392,8 @@ function setupEventListeners() {
     if (document.getElementById('file-btn')) {
         document.getElementById('file-btn').onclick = () => fileInput.click();
     }
-
-    // 3. Clipboard Paste Handler
+    
+    // 3. Clipboard Paste Handler (UNCHANGED)
     document.addEventListener('paste', async (e) => {
         if (!currentChatId || msgInput !== document.activeElement || msgInput.disabled) return;
 
@@ -423,9 +437,10 @@ function setupEventListeners() {
         }
     });
 
-    // 4. Friend Search & Autocomplete
+    // 4. Friend Search, Add, and Requests Toggle
     if (addFriendBtn && friendSearchInput && autocompleteDropdown && requestsToggle) {
         
+        // КНОПКА ОТПРАВКИ ЗАПРОСА
         addFriendBtn.onclick = () => {
             const username = friendSearchInput.value.trim();
             if (username) {
@@ -435,12 +450,17 @@ function setupEventListeners() {
             }
         };
 
+        // ПЕРЕКЛЮЧАТЕЛЬ ЗАПРОСОВ
         requestsToggle.onclick = () => {
             const isOpen = requestsToggle.getAttribute('data-open') === 'true';
             requestsToggle.setAttribute('data-open', !isOpen);
-            socket.emit('refresh_data'); 
+            requestsList.style.display = !isOpen ? 'block' : 'none'; // Показываем/скрываем
+            if (!isOpen) {
+                socket.emit('refresh_data'); // Обновляем список при открытии
+            }
         };
 
+        // АВТОКОМПЛИТ (UNCHANGED)
         friendSearchInput.oninput = async () => {
             const query = friendSearchInput.value.trim();
             if (query.length < 2) {
@@ -482,7 +502,7 @@ function setupEventListeners() {
         });
     }
 
-    // 5. Chat Actions Modal
+    // 5. Chat Actions Modal (UNCHANGED)
     if (chatActionsBtn) {
         chatActionsBtn.onclick = () => {
             if (!currentChatId || !chatActionsModal) return;
@@ -551,8 +571,9 @@ function setupEventListeners() {
     }
     if (modalCloseGroupBtn) modalCloseGroupBtn.onclick = () => hideModal(groupCreationModal);
     if (submitGroupBtn) {
-        submitGroupBtn.onclick = () => {
+        submitGroupBtn.onclick = async () => {
             const name = groupNameInput.value.trim();
+            const file = groupAvatarUpload.files[0];
             let avatar = groupAvatarInput.value.trim();
             const members = Array.from(groupMemberList.querySelectorAll('input[type="checkbox"]:checked')).map(cb => cb.getAttribute('data-id'));
 
@@ -560,20 +581,41 @@ function setupEventListeners() {
                 return alert('Group name and at least one member are required.');
             }
             
+            if (file) {
+                 // Загрузка файла, если он выбран
+                const formData = new FormData();
+                formData.append('file', file);
+                try {
+                    const res = await fetch('/api/upload', { method: 'POST', body: formData });
+                    if (res.ok) {
+                        const result = await res.json();
+                        avatar = result.url;
+                    } else {
+                        alert('Group avatar upload failed. Proceeding without custom avatar.');
+                    }
+                } catch(e) {
+                     alert('Group avatar upload network error. Proceeding without custom avatar.');
+                }
+            }
+
             socket.emit('create_group', { name, members, avatar });
             hideModal(groupCreationModal);
         };
     }
 
-    // 7. Add Member Modal
+    // 7. Add Member Modal (UNCHANGED)
     if (addMemberBtn) {
         addMemberBtn.onclick = () => {
             if (!currentChatId || !isCurrentChatGroup || !addMemberModal || !addMemberList) return;
             
-            const currentGroup = globalFriendsList.find(c => c.id === currentChatId);
-            if (!currentGroup) return;
+            // Находим текущую группу в списке контактов (глобальном)
+            const currentGroup = globalFriendsList.find(c => c.id === currentChatId) || 
+                                 [...contactsList.children].map(el => JSON.parse(el.getAttribute('onclick').match(/{.*?}/)[0])).find(c => c.id === currentChatId);
+            
+            if (!currentGroup || !currentGroup.members) return;
 
             addMemberList.innerHTML = '';
+            // Фильтруем друзей, которых еще нет в группе
             const availableFriends = globalFriendsList.filter(f => !currentGroup.members.some(m => m.id === f.id));
 
             if (availableFriends.length === 0) {
@@ -585,7 +627,7 @@ function setupEventListeners() {
                     addMemberList.appendChild(li);
                 });
             }
-            hideModal(chatActionsModal); // Скрываем модалку действий чата
+            hideModal(chatActionsModal); 
             showModal(addMemberModal);
         };
     }
@@ -603,7 +645,7 @@ function setupEventListeners() {
         };
     }
 
-    // 8. Log Out Handler
+    // 8. Log Out Handler (UNCHANGED)
     if (logoutBtn) {
         logoutBtn.onclick = async () => {
             if (confirm("Are you sure you want to log out?")) {

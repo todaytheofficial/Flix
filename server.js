@@ -1,5 +1,5 @@
 /**
- * server.js - Flix Backend (FINAL COMPLETE VERSION with all Fixes)
+ * server.js - Flix Backend (FINAL COMPLETE VERSION with all Mechanics)
  */
 const express = require('express');
 const http = require('http');
@@ -29,8 +29,11 @@ const getDB = () => {
     if (!fs.existsSync(DB_FILE)) return { users: [], messages: [], friendships: [], groups: [] };
     try {
         const data = JSON.parse(fs.readFileSync(DB_FILE));
+        // Ensure all top-level arrays exist
         if (!data.groups) data.groups = [];
         if (!data.friendships) data.friendships = [];
+        if (!data.users) data.users = [];
+        if (!data.messages) data.messages = [];
         return data;
     } catch(e) {
         console.error("Error reading DB file:", e);
@@ -276,6 +279,14 @@ io.on('connection', (socket) => {
             ).sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
         }
         
+        // Добавляем имя отправителя для групповых сообщений при загрузке
+        if (isGroup) {
+             history = history.map(msg => {
+                const sender = db.users.find(u => u.id === msg.from);
+                return { ...msg, senderName: sender?.username || 'User' };
+            });
+        }
+        
         socket.emit('chat_history', { chatId, messages: history, isGroup });
     });
 
@@ -307,11 +318,11 @@ io.on('connection', (socket) => {
         }
         
         const db = getDB(); 
+        const sender = db.users.find(u => u.id === userId);
         
         // Добавляем имя отправителя для групповых сообщений
-        if (newMessage.isGroup) {
-            const sender = db.users.find(u => u.id === userId);
-            if (sender) newMessage.senderName = sender.username;
+        if (newMessage.isGroup && sender) {
+            newMessage.senderName = sender.username;
         }
         
         db.messages.push(newMessage); 
@@ -355,7 +366,7 @@ io.on('connection', (socket) => {
         }
     });
 
-    // --- Friend and Group Management (ПОЛНАЯ ИСПРАВЛЕННАЯ ЛОГИКА) ---
+    // --- Friend and Group Management ---
 
     socket.on('friend_request', (username) => {
         const db = getDB();
