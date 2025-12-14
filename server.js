@@ -1,5 +1,5 @@
 /**
- * server.js - Flix Backend (Final Mega Update)
+ * server.js - Flix Backend (Final Complete Version with Autocomplete)
  * Author: Today
  */
 const express = require('express');
@@ -31,8 +31,9 @@ const getDB = () => {
     if (!fs.existsSync(DB_FILE)) return { users: [], messages: [], friendships: [], groups: [] };
     try {
         const data = JSON.parse(fs.readFileSync(DB_FILE));
-        // Ensure groups array exists on load
+        // Ensure necessary arrays exist on load
         if (!data.groups) data.groups = [];
+        if (!data.friendships) data.friendships = [];
         return data;
     } catch(e) {
         console.error("Error reading DB file:", e);
@@ -58,7 +59,6 @@ const upload = multer({ storage });
 const requireAuth = (req, res, next) => {
     const userId = req.cookies.user_session;
     if (!userId) {
-        // Redirection to register.html as requested
         return res.redirect(UNAUTH_REDIRECT_URL);
     }
     const db = getDB();
@@ -72,20 +72,21 @@ const requireAuth = (req, res, next) => {
 };
 
 // --- ROUTES ---
+
+// Protected Routes
 app.get('/', requireAuth, (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 app.get('/settings.html', requireAuth, (req, res) => res.sendFile(path.join(__dirname, 'public', 'settings.html')));
 
-// Auth Routes (login/register logic remains mostly same)
+// Auth API
 app.post('/api/register', (req, res) => {
     const { username, password } = req.body;
     const db = getDB();
-    if (db.users.find(u => u.username === username)) return res.status(400).json({ error: 'User exists' });
+    if (db.users.find(u => u.username.toLowerCase() === username.toLowerCase())) return res.status(400).json({ error: 'User exists' });
     
     const newUser = { 
         id: uuidv4(), 
         username, 
         password, 
-        // Default avatar
         avatar: `https://ui-avatars.com/api/?name=${username}&background=random&color=fff&size=128&bold=true` 
     };
     db.users.push(newUser);
@@ -118,14 +119,14 @@ app.post('/api/logout', (req, res) => {
     res.json({ success: true });
 });
 
-// Update User Info (Username only, avatar URL removed)
+// Update User Info (Username/Avatar File)
 app.post('/api/update_user', requireAuth, (req, res) => {
     const { username } = req.body;
     const db = getDB();
     const userIndex = db.users.findIndex(u => u.id === req.user.id);
 
     if (username && username.trim() !== req.user.username) {
-        if (db.users.some(u => u.username === username && u.id !== req.user.id)) {
+        if (db.users.some(u => u.username.toLowerCase() === username.toLowerCase() && u.id !== req.user.id)) {
             return res.status(400).json({ error: 'Username already taken.' });
         }
     }
@@ -141,7 +142,6 @@ app.post('/api/update_user', requireAuth, (req, res) => {
     res.status(500).json({ error: 'User not found.' });
 });
 
-// Avatar Upload (File-based)
 app.post('/api/update_avatar', requireAuth, upload.single('avatar'), (req, res) => {
     if (!req.file) return res.status(400).json({ error: 'No file uploaded.' });
     
@@ -168,6 +168,34 @@ app.post('/api/upload', requireAuth, upload.single('file'), (req, res) => {
     });
 });
 
+
+// --- NEW: USER SEARCH API (Autocomplete) ---
+app.get('/api/search_users', requireAuth, (req, res) => {
+    const { query } = req.query;
+    if (!query || query.length < 2) return res.json([]);
+
+    const db = getDB();
+    const currentUserId = req.user.id;
+    const lowerQuery = query.toLowerCase();
+
+    // 1. Find users whose username starts with the query
+    const results = db.users
+        .filter(u => 
+            u.id !== currentUserId && // Exclude self
+            u.username.toLowerCase().startsWith(lowerQuery)
+        )
+        // 2. Select only safe data (id, username, avatar)
+        .map(u => ({
+            id: u.id,
+            username: u.username,
+            avatar: u.avatar
+        }))
+        .slice(0, 10); // Limit results for performance
+    
+    res.json(results);
+});
+
+
 // --- SOCKET.IO LOGIC ---
 const onlineUsers = new Map();
 
@@ -179,16 +207,16 @@ const getMyGroups = (userId, db) => {
 const sendInitialData = (socket, userId) => {
     const db = getDB();
     
-    // 1. Friend Requests (same as before)
+    // 1. Friend Requests
     const myRequests = db.friendships
         .filter(f => f.to === userId && f.status === 'pending')
         .map(f => ({ 
             id: f.id, 
             from: f.from, 
-            fromName: db.users.find(u => u.id === f.from)?.username // Safe check
+            fromName: db.users.find(u => u.id === f.from)?.username
         }));
         
-    // 2. Friend List (same as before, filtering blocked users)
+    // 2. Friend List
     const myFriends = db.friendships
         .filter(f => (f.from === userId || f.to === userId) && f.status === 'accepted')
         .map(f => {
@@ -206,7 +234,7 @@ const sendInitialData = (socket, userId) => {
             };
         });
 
-    // 3. Group List (NEW)
+    // 3. Group List
     const groups = getMyGroups(userId, db);
 
     socket.emit('init_data', { requests: myRequests, friends: myFriends, groups: groups });
@@ -214,8 +242,10 @@ const sendInitialData = (socket, userId) => {
 
 
 io.on('connection', (socket) => {
+    // Basic cookie parsing to find userId
     const cookie = socket.handshake.headers.cookie;
-    const userId = cookie?.split('; ').find(row => row.startsWith('user_session='))?.split('=')[1];
+    const userIdMatch = cookie?.split('; ').find(row => row.startsWith('user_session='));
+    const userId = userIdMatch ? userIdMatch.split('=')[1] : null;
     
     if (!userId) { socket.disconnect(); return; }
 
@@ -252,14 +282,14 @@ io.on('connection', (socket) => {
         const newMessage = {
             id: uuidv4(),
             from: userId,
-            to: data.toUserId, // Can be friendId or groupId
+            to: data.toUserId,
             isGroup: data.isGroup || false,
             content: data.content,
             type: data.type || 'text',
             timestamp: new Date().toISOString()
         };
 
-        // Check blocking status before saving/sending DM
+        // Blocking check (Only for DMs)
         if (!newMessage.isGroup) {
             const db = getDB();
             const friendship = db.friendships.find(f => 
@@ -270,7 +300,6 @@ io.on('connection', (socket) => {
                  if (friendship.blockerId === userId) {
                     return socket.emit('error', 'You have blocked this user. Unblock to send messages.');
                  } else if (friendship.blockerId === newMessage.to) {
-                     // User is blocked, don't send message, but save locally if needed (optional)
                      return socket.emit('error', 'You are blocked by this user.');
                  }
             }
@@ -294,15 +323,19 @@ io.on('connection', (socket) => {
 
     socket.on('delete_message', ({ messageId, chatId, isGroup }) => {
         const db = getDB();
+        // Allow deleting own message
         const msgIndex = db.messages.findIndex(m => m.id === messageId && m.from === userId);
 
         if (msgIndex !== -1) {
+            // Determine the room to notify
+            const targetMessage = db.messages[msgIndex];
+            const targetRoom = targetMessage.isGroup ? targetMessage.to : (targetMessage.to === userId ? targetMessage.from : targetMessage.to);
+            
+            // Remove from DB
             db.messages.splice(msgIndex, 1);
             saveDB(db);
             
-            // Notify chat participants to remove the message
-            const targetRoom = isGroup ? chatId : (chatId === userId ? db.messages[msgIndex].to : chatId); // Get the right target
-            
+            // Notify chat participants
             io.to(targetRoom).emit('message_deleted', { messageId, chatId, isGroup });
             socket.emit('message_deleted', { messageId, chatId, isGroup }); // Sender
         } else {
@@ -313,11 +346,77 @@ io.on('connection', (socket) => {
 
     // --- Friend and Group Management ---
 
+    socket.on('friend_request', (username) => {
+        const db = getDB();
+        const recipient = db.users.find(u => u.username === username);
+        
+        if (!recipient || recipient.id === userId) {
+            return socket.emit('error', 'User not found or cannot send request to self.');
+        }
+        
+        const existing = db.friendships.find(f => 
+            (f.from === userId && f.to === recipient.id) || 
+            (f.from === recipient.id && f.to === userId)
+        );
+
+        if (existing) {
+            if (existing.status === 'accepted') return socket.emit('error', 'Already friends.');
+            if (existing.status === 'pending') return socket.emit('error', 'Request already pending.');
+        }
+
+        const newRequest = {
+            id: uuidv4(),
+            from: userId,
+            to: recipient.id,
+            status: 'pending'
+        };
+        db.friendships.push(newRequest);
+        saveDB(db);
+
+        // Notify recipient and sender
+        io.to(recipient.id).emit('refresh_data');
+        socket.emit('success', 'Friend request sent.');
+    });
+
+    socket.on('accept_request', (reqId) => {
+        const db = getDB();
+        const requestIndex = db.friendships.findIndex(f => f.id === reqId && f.to === userId);
+
+        if (requestIndex !== -1) {
+            db.friendships[requestIndex].status = 'accepted';
+            saveDB(db);
+
+            // Notify both users
+            io.to(db.friendships[requestIndex].from).emit('refresh_data');
+            socket.emit('refresh_data');
+            socket.emit('success', 'Friend added!');
+        } else {
+            socket.emit('error', 'Request not found.');
+        }
+    });
+
+    socket.on('decline_request', (reqId) => {
+        const db = getDB();
+        const requestIndex = db.friendships.findIndex(f => f.id === reqId && f.to === userId);
+
+        if (requestIndex !== -1) {
+            const senderId = db.friendships[requestIndex].from;
+            db.friendships.splice(requestIndex, 1);
+            saveDB(db);
+
+            io.to(senderId).emit('refresh_data');
+            socket.emit('refresh_data');
+            socket.emit('success', 'Request declined.');
+        } else {
+            socket.emit('error', 'Request not found.');
+        }
+    });
+
+
     socket.on('remove_friend', (friendId) => {
         const db = getDB();
         const initialCount = db.friendships.length;
 
-        // Remove friendship entirely
         db.friendships = db.friendships.filter(f => 
             !((f.from === userId && f.to === friendId) || (f.from === friendId && f.to === userId))
         );
@@ -340,16 +439,16 @@ io.on('connection', (socket) => {
         );
 
         if (friendship) {
-            friendship.blockerId = userId; // ID of the user who initiated the block
+            // Simple block/unblock toggle
+            friendship.blockerId = friendship.blockerId === userId ? null : userId; 
             saveDB(db);
             socket.emit('refresh_data');
-            socket.emit('success', 'User blocked.');
+            socket.emit('success', friendship.blockerId ? 'User blocked.' : 'User unblocked.');
         } else {
-            socket.emit('error', 'Cannot block non-friend yet.');
+            socket.emit('error', 'Cannot block a non-friend.');
         }
     });
 
-    // Group Creation
     socket.on('create_group', ({ name, members, avatar }) => {
         const db = getDB();
         
@@ -357,7 +456,7 @@ io.on('connection', (socket) => {
         const allMembers = Array.from(new Set([...members, userId]));
         const memberObjects = allMembers.map(id => ({ id, name: db.users.find(u => u.id === id)?.username }));
 
-        if (memberObjects.length < 2) return socket.emit('error', 'Group needs at least two members.');
+        if (memberObjects.length < 2) return socket.emit('error', 'Group needs at least two members (including you).');
 
         const newGroup = {
             id: uuidv4(),
@@ -382,8 +481,7 @@ io.on('connection', (socket) => {
         socket.emit('success', 'Group created successfully.');
     });
 
-    // TODO: Add 'add_group_member', 'kick_group_member', 'change_group_name' logic here
-    // For brevity, I'll stop the group logic implementation here, focusing on the core requests.
+    // TODO: Add full group member management logic (kick, add, promote)
 
     socket.on('disconnect', () => {
         onlineUsers.delete(userId);

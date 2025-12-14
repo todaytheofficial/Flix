@@ -1,47 +1,64 @@
 /**
- * Flix Client Logic (Final Mega Update)
+ * client.js - Flix Client Logic (Final Mega Update)
+ * Includes: Theme Management, Socket.IO, Chat/Group Logic, Media Upload, Modals, Autocomplete.
  */
 const socket = io();
 let currentUser = null;
 let currentChatId = null; 
 let isCurrentChatGroup = false;
-let currentChatFriendData = null; // Store friend/group data
+let currentChatFriendData = null; // Stores friend/group object for header info
 
 // --- DOM Elements ---
+const sidebar = document.querySelector('.sidebar');
 const contactsList = document.getElementById('contacts-list');
-const requestsList = document.getElementById('requests-list');
 const messagesArea = document.getElementById('messages-area');
-const chatTitle = document.getElementById('chat-title');
 const msgInput = document.getElementById('msg-input');
 const sendBtn = document.getElementById('send-btn');
-const inputArea = document.getElementById('input-area');
 const fileInput = document.getElementById('file-input');
-const fileBtn = document.getElementById('file-btn');
-const progressBar = document.getElementById('upload-bar');
+const uploadBar = document.getElementById('upload-bar');
 const progressContainer = document.querySelector('.progress-container');
-const reqCountEl = document.getElementById('req-count');
-const requestsToggle = document.getElementById('requests-toggle');
-const sidebar = document.querySelector('.sidebar');
+const chatTitle = document.getElementById('chat-title');
+const inputArea = document.getElementById('input-area');
 const mobileMenuToggle = document.getElementById('mobile-menu-toggle');
 const chatActionsBtn = document.getElementById('chat-actions-btn');
 
-// Modals
+// Request/Friend Search Elements
+const friendSearchInput = document.getElementById('friend-search');
+const addFriendBtn = document.getElementById('add-friend-btn');
+const requestsToggle = document.getElementById('requests-toggle');
+const requestsList = document.getElementById('requests-list');
+const reqCountEl = document.getElementById('req-count');
+// Autocomplete
+const autocompleteDropdown = document.createElement('div');
+autocompleteDropdown.className = 'autocomplete-dropdown';
+friendSearchInput.parentElement.appendChild(autocompleteDropdown); 
+
+// Modal Elements
 const chatActionsModal = document.getElementById('chat-actions-modal');
 const modalCloseBtn = document.getElementById('modal-close');
-const modalRemoveFriend = document.getElementById('modal-remove-friend');
-const modalBlockUser = document.getElementById('modal-block-user');
+const modalRemoveFriendBtn = document.getElementById('modal-remove-friend');
+const modalBlockUserBtn = document.getElementById('modal-block-user');
+const modalDeleteChatBtn = document.getElementById('modal-delete-chat');
 
 const createGroupBtn = document.getElementById('create-group-btn');
 const groupCreationModal = document.getElementById('group-creation-modal');
+const groupNameInput = document.getElementById('group-name-input');
+const groupAvatarInput = document.getElementById('group-avatar-input');
 const groupMemberList = document.getElementById('group-member-list');
 const submitGroupBtn = document.getElementById('submit-group-btn');
+const modalCloseGroupBtn = document.getElementById('modal-close-group');
 
-// Apply Theme
-if(localStorage.innerWidth < 768) {
-    if(localStorage.getItem('theme') === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
+
+// --- CORE INITIALIZATION & THEME FIX ---
+
+// FIX: Apply theme immediately before init (fixes white flash on dark theme)
+const storedTheme = localStorage.getItem('theme');
+if (storedTheme) {
+    document.documentElement.setAttribute('data-theme', storedTheme);
+} else {
+    document.documentElement.setAttribute('data-theme', 'light');
 }
 
-// --- INITIALIZATION & AUTH CHECK ---
 async function init() {
     const res = await fetch('/api/me');
     if(res.status !== 200) {
@@ -50,42 +67,52 @@ async function init() {
     }
     currentUser = await res.json();
     
-    // Initialize Mobile UI
+    // Set up Mobile UI state
     if (window.innerWidth < 768) {
         sidebar.classList.add('hidden'); 
     }
+    
+    // Set up event listeners that depend on currentUser
+    setupEventListeners();
 }
 init();
 
-// --- SOCKET EVENTS ---
+
+// --- SOCKET.IO HANDLERS ---
+
 socket.on('init_data', (data) => {
+    // data: { requests, friends, groups }
     renderRequests(data.requests);
-    // Combine friends and groups for the sidebar list
-    const combinedList = [...data.friends, ...data.groups.map(g => ({...g, isGroup: true}))];
-    renderContacts(combinedList);
+    renderContacts([...data.friends, ...data.groups]);
 });
 
 socket.on('refresh_data', () => {
+    // Re-request initial data after an action (friendship change, group creation)
     socket.emit('refresh_data');
 });
 
-// Receive chat history
 socket.on('chat_history', ({ chatId, messages, isGroup }) => {
-    if (chatId !== currentChatId) return; 
+    if (chatId !== currentChatId) return;
     
-    messagesArea.innerHTML = ''; 
-    messages.forEach(msg => {
-        const type = msg.from === currentUser.id ? 'sent' : 'received';
-        appendMessage(msg, type, isGroup);
-    });
+    messagesArea.innerHTML = '';
+    messages.forEach(msg => messagesArea.appendChild(createMessageEl(msg)));
+    scrollToBottom();
 });
 
 socket.on('new_message', (msg) => {
     if (msg.to === currentChatId || msg.from === currentChatId) {
-        const type = msg.from === currentUser.id ? 'sent' : 'received';
-        appendMessage(msg, type, msg.isGroup);
-    } else {
-        // TODO: Implement unread indicator/notification
+        messagesArea.appendChild(createMessageEl(msg));
+        scrollToBottom();
+    }
+    // Simple visual update for contact list (could be optimized)
+    socket.emit('refresh_data'); 
+});
+
+socket.on('message_sent', (msg) => {
+    // This is for the sender to confirm and display their own message
+    if (msg.to === currentChatId) {
+        messagesArea.appendChild(createMessageEl(msg));
+        scrollToBottom();
     }
 });
 
@@ -93,60 +120,67 @@ socket.on('message_deleted', ({ messageId, chatId }) => {
     if (chatId === currentChatId) {
         const msgEl = document.getElementById(`msg-${messageId}`);
         if (msgEl) {
-            msgEl.innerHTML = '<span style="color: var(--text-muted); font-style: italic;">(Message deleted)</span>';
             msgEl.classList.add('deleted');
+            msgEl.innerHTML = '(Message deleted)';
         }
     }
+    // No need to refresh contacts list here
 });
 
-socket.on('message_sent', (msg) => {
-    if (msg.to === currentChatId) {
-        const type = msg.from === currentUser.id ? 'sent' : 'received';
-        appendMessage(msg, type, msg.isGroup);
-    }
+socket.on('error', (message) => {
+    alert(`Error: ${message}`);
+    console.error(message);
 });
 
-socket.on('error', (err) => alert('Error: ' + err));
-socket.on('success', (msg) => console.log('Success: ' + msg));
+socket.on('success', (message) => {
+    console.log(`Success: ${message}`);
+});
 
-// --- UI FUNCTIONS ---
-function createContactEl(contact) {
-    const isGroup = contact.isGroup;
-    const div = document.createElement('div');
-    div.className = 'user-item';
-    div.dataset.chatId = contact.id;
-    div.dataset.isGroup = isGroup;
 
-    div.onclick = () => openChat(contact);
-    
-    const statusHtml = isGroup ? 
-        `<span class="group">Group (${contact.members.length})</span>` : 
-        `<span class="${contact.status}">${contact.isBlocked ? 'Blocked' : contact.status}</span>`;
+// --- UI RENDERING FUNCTIONS ---
 
-    div.innerHTML = `
-        <img src="${contact.avatar}" class="avatar">
+function createContactEl(contact, isGroup = false) {
+    const el = document.createElement('div');
+    el.className = 'user-item';
+    if (contact.id === currentChatId) el.classList.add('active');
+
+    const statusClass = isGroup ? 'group' : (contact.status === 'online' ? 'online' : 'offline');
+    const statusText = isGroup ? 'Group' : contact.status;
+    const isBlocked = contact.isBlocked ? ' (Blocked)' : '';
+
+    el.innerHTML = `
+        <img src="${contact.avatar || contact.groupAvatar}" alt="${contact.name || contact.username} avatar" class="avatar">
         <div class="user-info">
             <h4>${contact.name || contact.username}</h4>
-            ${statusHtml}
+            <span class="${statusClass}">${statusText}${isBlocked}</span>
         </div>
     `;
-    return div;
+
+    el.onclick = () => openChat(contact, isGroup);
+    return el;
 }
 
 function renderContacts(contacts) {
     contactsList.innerHTML = '';
-    contacts.forEach(c => contactsList.appendChild(createContactEl(c)));
+    
+    // Sort friends first, then groups. Online friends first.
+    const friends = contacts.filter(c => !c.members).sort((a, b) => {
+        if (a.status === 'online' && b.status !== 'online') return -1;
+        if (a.status !== 'online' && b.status === 'online') return 1;
+        return a.username.localeCompare(b.username);
+    });
+    
+    const groups = contacts.filter(c => c.members).sort((a, b) => a.name.localeCompare(b.name));
+
+    friends.forEach(f => contactsList.appendChild(createContactEl(f, false)));
+    groups.forEach(g => contactsList.appendChild(createContactEl(g, true)));
 }
 
 function renderRequests(requests) {
-    // Logic similar to previous step, ensuring auto-refresh updates the list
-    requestsList.innerHTML = '';
     reqCountEl.innerText = requests.length;
 
-    if (requests.length === 0) {
-        requestsList.style.display = 'none';
-        requestsList.innerHTML = '<div style="color: var(--text-muted); padding: 5px; font-size: 0.9rem;">No requests.</div>';
-    } else {
+    requestsList.innerHTML = '';
+    if (requests.length > 0 && requestsToggle.getAttribute('data-open') === 'true') {
         requestsList.style.display = 'block'; 
         requests.forEach(req => {
             const div = document.createElement('div');
@@ -161,254 +195,337 @@ function renderRequests(requests) {
             `;
             requestsList.appendChild(div);
         });
+    } else {
+        requestsList.style.display = 'none';
     }
 }
 
-function openChat(contact) {
-    currentChatId = contact.id;
-    isCurrentChatGroup = contact.isGroup || false;
-    currentChatFriendData = contact;
-    chatTitle.innerText = contact.name || contact.username;
-    inputArea.style.display = 'flex';
+// Global window functions for request buttons
+window.acceptFriend = (reqId) => { socket.emit('accept_request', reqId); };
+window.declineFriend = (reqId) => { socket.emit('decline_request', reqId); };
+
+function createMessageEl(msg) {
+    const el = document.createElement('div');
+    el.id = `msg-${msg.id}`;
+    el.className = `msg ${msg.from === currentUser.id ? 'sent' : 'received'}`;
     
-    // Manage Chat Actions Button visibility
-    chatActionsBtn.style.display = isCurrentChatGroup ? 'none' : 'block';
+    let contentHTML = msg.content;
+    const senderName = msg.isGroup ? currentChatFriendData.members.find(m => m.id === msg.from)?.name : '';
 
-    // Set active class
-    document.querySelectorAll('.user-item').forEach(el => el.classList.remove('active'));
-    document.querySelector(`[data-chat-id="${contact.id}"]`).classList.add('active');
-
-    // Clear and request history
-    messagesArea.innerHTML = '<div style="text-align:center; color: var(--text-muted); margin-top: 50px;">Loading messages...</div>';
-    socket.emit('get_history', { chatId: contact.id, isGroup: isCurrentChatGroup });
-
-    // Hide sidebar on chat open if on mobile
-    if (window.innerWidth < 768) {
-        sidebar.classList.add('hidden');
-    }
-}
-
-function appendMessage(msg, type, isGroup) {
-    const div = document.createElement('div');
-    div.className = `msg ${type}`;
-    div.id = `msg-${msg.id}`;
-    div.dataset.messageId = msg.id; // For deletion
-    
-    let contentHtml = '';
-    
-    if (isGroup && type === 'received') {
-        // Find sender name for group messages
-        const group = currentChatFriendData;
-        const sender = group.members.find(m => m.id === msg.from)?.name || 'Unknown';
-        contentHtml += `<div class="group-sender">${sender}</div>`;
-    }
-
-    // Formatting content based on type (Image, Video, Audio, Text)
-    if (msg.type === 'text') {
-        contentHtml += msg.content.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-    } else if (msg.type.startsWith('image')) {
-        contentHtml += `<img src="${msg.content}" alt="Image attachment">`;
-    } else if (msg.type.startsWith('audio')) {
-        contentHtml += `<audio controls src="${msg.content}"></audio>`;
-    } else if (msg.type.startsWith('video')) {
-        contentHtml += `<video controls src="${msg.content}"></video>`;
+    if (msg.type !== 'text') {
+        const mediaType = msg.type.split('/')[0];
+        if (mediaType === 'image') {
+            contentHTML = `<img src="${msg.content}" alt="Image" />`;
+        } else if (mediaType === 'video') {
+            contentHTML = `<video controls src="${msg.content}"></video>`;
+        } else if (mediaType === 'audio') {
+            contentHTML = `<audio controls src="${msg.content}"></audio>`;
+        }
     }
     
-    // Add right-click context menu listener for deletion
-    if (type === 'sent') {
-        div.oncontextmenu = (e) => {
+    if (msg.isGroup && msg.from !== currentUser.id) {
+        el.innerHTML = `<div class="group-sender">${senderName}</div>${contentHTML}`;
+    } else {
+        el.innerHTML = contentHTML;
+    }
+    
+    // Add context menu for deletion (sender only)
+    if (msg.from === currentUser.id && msg.type !== 'deleted') {
+        el.oncontextmenu = (e) => {
             e.preventDefault();
-            if (confirm('Delete this message for yourself only?')) {
-                socket.emit('delete_message', { messageId: msg.id, chatId: currentChatId, isGroup: isGroup });
+            if (confirm("Delete this message? (Only visible to you, currently)")) {
+                socket.emit('delete_message', { messageId: msg.id, chatId: currentChatId, isGroup: isCurrentChatGroup });
             }
         };
     }
 
-
-    div.innerHTML = contentHtml;
-    messagesArea.appendChild(div);
-    messagesArea.scrollTop = messagesArea.scrollHeight;
+    return el;
 }
 
-// --- USER ACTIONS ---
-// Friend Requests
-window.acceptFriend = (reqId) => { socket.emit('accept_request', reqId); };
-window.declineFriend = (reqId) => { socket.emit('decline_request', reqId); };
 
-// Send Message
-sendBtn.onclick = () => {
-    const text = msgInput.value.trim();
-    if(!text || !currentChatId) return;
+// --- CHAT MANAGEMENT ---
+
+function openChat(contact, isGroup) {
+    // Hide sidebar on mobile
+    if (window.innerWidth < 768) sidebar.classList.add('hidden');
     
-    // Check if the current user is trying to message a blocked user
-    if (currentChatFriendData?.isBlocked && !isCurrentChatGroup) {
-         return alert("You or the other user is blocked. Cannot send messages.");
+    // Update active class
+    document.querySelectorAll('.user-item').forEach(item => item.classList.remove('active'));
+    const contactEl = contactsList.querySelector(`[onclick*="${contact.id}"].user-item`);
+    if (contactEl) contactEl.classList.add('active');
+
+    // Set chat state
+    currentChatId = contact.id;
+    isCurrentChatGroup = isGroup;
+    currentChatFriendData = contact;
+    chatTitle.innerText = isGroup ? contact.name : contact.username;
+    inputArea.style.display = 'flex';
+    chatActionsBtn.style.display = 'block';
+
+    // Disable input if blocked in DM
+    if (!isGroup && contact.isBlocked) {
+        msgInput.disabled = true;
+        msgInput.placeholder = contact.blockerId === currentUser.id ? "You have blocked this user." : "You are blocked by this user.";
+        sendBtn.disabled = true;
+        fileInput.disabled = true;
+    } else {
+        msgInput.disabled = false;
+        msgInput.placeholder = "Type a message...";
+        sendBtn.disabled = false;
+        fileInput.disabled = false;
     }
-    
-    socket.emit('send_message', { 
-        toUserId: currentChatId, 
-        content: text, 
-        type: 'text',
-        isGroup: isCurrentChatGroup
+
+    // Load history
+    messagesArea.innerHTML = '<div style="text-align:center; padding: 20px;">Loading history...</div>';
+    socket.emit('get_history', { chatId: currentChatId, isGroup: isGroup });
+}
+
+
+// --- MODAL & ACTION HANDLERS ---
+
+function showModal(modal) {
+    modal.style.display = 'flex';
+}
+
+function hideModal(modal) {
+    modal.style.display = 'none';
+}
+
+function setupEventListeners() {
+    // 1. Mobile Menu Toggle
+    mobileMenuToggle.onclick = () => sidebar.classList.toggle('hidden');
+
+    // 2. Send Message
+    sendBtn.onclick = () => {
+        const content = msgInput.value.trim();
+        if (!content || !currentChatId) return;
+
+        socket.emit('send_message', {
+            toUserId: currentChatId,
+            content: content,
+            isGroup: isCurrentChatGroup,
+            type: 'text'
+        });
+        msgInput.value = '';
+    };
+
+    msgInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') sendBtn.click();
     });
-    msgInput.value = '';
-};
 
-// --- MODALS AND MANAGEMENT LOGIC ---
+    // 3. File Upload
+    fileInput.onchange = async (e) => {
+        const file = e.target.files[0];
+        if (!file || !currentChatId) return;
 
-// Mobile Menu Toggle
-mobileMenuToggle.onclick = () => {
-    sidebar.classList.toggle('hidden');
-};
+        progressContainer.style.display = 'block';
+        uploadBar.style.width = '0%';
 
-// Chat Actions Modal (Block, Remove Friend)
-chatActionsBtn.onclick = () => {
-    if (!currentChatId || isCurrentChatGroup) return;
+        const formData = new FormData();
+        formData.append('file', file);
 
-    // Update modal buttons based on blocking status
-    const isBlocked = currentChatFriendData?.isBlocked;
-    modalBlockUser.innerText = isBlocked ? 'Unblock User (Not Implemented)' : 'Block User';
-    
-    chatActionsModal.style.display = 'flex';
-};
+        try {
+            const xhr = new XMLHttpRequest();
+            xhr.open('POST', '/api/upload', true);
+            
+            xhr.upload.onprogress = (event) => {
+                if (event.lengthComputable) {
+                    const percent = (event.loaded / event.total) * 100;
+                    uploadBar.style.width = `${percent}%`;
+                }
+            };
+            
+            xhr.onload = () => {
+                progressContainer.style.display = 'none';
+                if (xhr.status === 200) {
+                    const result = JSON.parse(xhr.responseText);
+                    socket.emit('send_message', {
+                        toUserId: currentChatId,
+                        content: result.url,
+                        isGroup: isCurrentChatGroup,
+                        type: result.type // e.g., 'image/png'
+                    });
+                } else {
+                    alert('File upload failed.');
+                }
+            };
 
-modalCloseBtn.onclick = () => { chatActionsModal.style.display = 'none'; };
-document.getElementById('modal-close-group').onclick = () => { groupCreationModal.style.display = 'none'; };
+            xhr.onerror = () => {
+                progressContainer.style.display = 'none';
+                alert('File upload failed (Network error).');
+            };
 
-// Remove Friend Action
-modalRemoveFriend.onclick = () => {
-    if (confirm(`Are you sure you want to remove ${currentChatFriendData.username}?`)) {
-        socket.emit('remove_friend', currentChatId);
-        chatActionsModal.style.display = 'none';
-        currentChatId = null; 
-        chatTitle.innerText = 'Select a chat';
-        messagesArea.innerHTML = '<div style="text-align:center; color: var(--text-muted); margin-top: 50px;">Friend removed.</div>';
-    }
-};
+            xhr.send(formData);
 
-// Block User Action
-modalBlockUser.onclick = () => {
-    if (confirm(`Are you sure you want to block ${currentChatFriendData.username}?`)) {
-        socket.emit('block_user', currentChatId);
-        chatActionsModal.style.display = 'none';
-    }
-};
+        } catch (error) {
+            console.error(error);
+            progressContainer.style.display = 'none';
+        }
+    };
+    document.getElementById('file-btn').onclick = () => fileInput.click();
 
-// Delete Chat History (Simple client-side clearing for now)
-document.getElementById('modal-delete-chat').onclick = () => {
-    if (confirm('Are you sure you want to delete the local chat history? (Will not delete messages from server)')) {
-        messagesArea.innerHTML = '<div style="text-align:center; color: var(--text-muted); margin-top: 50px;">Chat history cleared.</div>';
-        chatActionsModal.style.display = 'none';
-    }
-};
-
-// Group Creation UI/Logic
-createGroupBtn.onclick = () => {
-    socket.emit('refresh_data'); // Get the latest friend list
-    
-    // Populate the member list with current friends
-    groupMemberList.innerHTML = '';
-    const friends = Array.from(contactsList.children).filter(el => el.dataset.isGroup === 'false');
-    
-    friends.forEach(friendEl => {
-        const friendId = friendEl.dataset.chatId;
-        const friendName = friendEl.querySelector('h4').innerText;
-        const label = document.createElement('label');
-        label.style.display = 'block';
-        label.innerHTML = `<input type="checkbox" name="group_member" value="${friendId}"> ${friendName}`;
-        groupMemberList.appendChild(label);
-    });
-    
-    groupCreationModal.style.display = 'flex';
-};
-
-submitGroupBtn.onclick = () => {
-    const groupName = document.getElementById('group-name-input').value.trim();
-    const groupAvatar = document.getElementById('group-avatar-input').value.trim();
-    const selectedMembers = Array.from(document.querySelectorAll('#group-member-list input:checked'))
-                                .map(input => input.value);
-    
-    if (!groupName || selectedMembers.length === 0) {
-        return alert('Please enter a group name and select at least one friend.');
-    }
-
-    socket.emit('create_group', {
-        name: groupName,
-        members: selectedMembers,
-        avatar: groupAvatar
-    });
-    
-    groupCreationModal.style.display = 'none';
-};
-
-// --- FILE UPLOAD (Remains the same) ---
-
-fileBtn.onclick = () => {
-    if (!currentChatId) return alert('Select a friend or group first.');
-    fileInput.click();
-};
-
-fileInput.onchange = (e) => {
-    const file = e.target.files[0];
-    if(!file) return;
-    uploadFile(file);
-    fileInput.value = ''; 
-};
-
-// Drag & Drop
-messagesArea.ondragover = (e) => { e.preventDefault(); messagesArea.style.background = 'var(--msg-received)'; };
-messagesArea.ondragleave = (e) => { e.preventDefault(); messagesArea.style.background = 'var(--bg-body)'; };
-messagesArea.ondrop = (e) => {
-    e.preventDefault();
-    messagesArea.style.background = 'var(--bg-body)';
-    if (!currentChatId) return alert('Select a friend or group first to send files.');
-    const file = e.dataTransfer.files[0];
-    if(file) uploadFile(file);
-};
-
-function uploadFile(file) {
-    const allowedTypes = ['audio/mpeg', 'video/mp4', 'image/png', 'image/jpeg', 'image/webp'];
-    if (!allowedTypes.includes(file.type)) {
-        alert('Unsupported file type. Only mp3, mp4, png, jpg, webp are allowed.');
-        return;
-    }
-
-    const formData = new FormData();
-    formData.append('file', file);
-
-    const xhr = new XMLHttpRequest();
-    
-    // Progress UI
-    progressContainer.style.display = 'block';
-    xhr.upload.onprogress = (e) => {
-        if (e.lengthComputable) {
-            const percent = (e.loaded / e.total) * 100;
-            progressBar.style.width = percent + '%';
+    // 4. Friend Search & Add
+    addFriendBtn.onclick = () => {
+        const username = friendSearchInput.value.trim();
+        if (username) {
+            socket.emit('friend_request', username);
+            friendSearchInput.value = '';
+            autocompleteDropdown.innerHTML = '';
         }
     };
 
-    xhr.onload = () => {
-        progressContainer.style.display = 'none';
-        progressBar.style.width = '0%';
-        if (xhr.status === 200) {
-            const data = JSON.parse(xhr.responseText);
-            // Send file URL via socket
-            socket.emit('send_message', { 
-                toUserId: currentChatId, 
-                content: data.url, 
-                type: data.type,
-                isGroup: isCurrentChatGroup
+    // 5. Request Toggle
+    requestsToggle.onclick = () => {
+        const isOpen = requestsToggle.getAttribute('data-open') === 'true';
+        requestsToggle.setAttribute('data-open', !isOpen);
+        // Rerender requests to handle show/hide logic
+        socket.emit('refresh_data'); 
+    };
+
+    // 6. Autocomplete Logic (NEW)
+    friendSearchInput.oninput = async () => {
+        const query = friendSearchInput.value.trim();
+        if (query.length < 2) {
+            autocompleteDropdown.innerHTML = '';
+            return;
+        }
+
+        const res = await fetch(`/api/search_users?query=${encodeURIComponent(query)}`);
+        const users = await res.json();
+
+        autocompleteDropdown.innerHTML = '';
+        
+        // Match width of the input area
+        const inputRect = friendSearchInput.parentElement.getBoundingClientRect();
+        autocompleteDropdown.style.width = `${inputRect.width}px`;
+        autocompleteDropdown.style.left = `${inputRect.left}px`;
+        
+        if (users.length > 0) {
+            users.forEach(user => {
+                const item = document.createElement('div');
+                item.className = 'autocomplete-item';
+                item.innerHTML = `
+                    <img src="${user.avatar}" class="avatar" style="width:30px; height:30px;">
+                    <span>${user.username}</span>
+                `;
+                item.onclick = () => {
+                    friendSearchInput.value = user.username;
+                    autocompleteDropdown.innerHTML = '';
+                };
+                autocompleteDropdown.appendChild(item);
             });
+        }
+    };
+    
+    // Close autocomplete when clicking outside
+    document.addEventListener('click', (e) => {
+        if (!e.target.closest('#friend-search') && !e.target.closest('.autocomplete-dropdown')) {
+            autocompleteDropdown.innerHTML = '';
+        }
+    });
+
+    // 7. Chat Actions Modal
+    chatActionsBtn.onclick = () => {
+        if (!currentChatId) return;
+        
+        // Hide/Show options based on chat type
+        const isGroup = currentChatFriendData.members ? true : false;
+        modalRemoveFriendBtn.style.display = isGroup ? 'none' : 'block';
+        modalBlockUserBtn.style.display = isGroup ? 'none' : 'block';
+        
+        // Update block button text
+        if (!isGroup && currentChatFriendData.isBlocked) {
+            modalBlockUserBtn.innerText = 'Unblock User';
+            modalBlockUserBtn.style.color = 'var(--accent)';
         } else {
-            alert('Upload failed: ' + (xhr.responseText || xhr.statusText));
+            modalBlockUserBtn.innerText = 'Block User';
+            modalBlockUserBtn.style.color = '#ef4444';
+        }
+
+        showModal(chatActionsModal);
+    };
+
+    modalCloseBtn.onclick = () => hideModal(chatActionsModal);
+
+    modalRemoveFriendBtn.onclick = () => {
+        if (confirm(`Are you sure you want to remove ${currentChatFriendData.username} from your friends?`)) {
+            socket.emit('remove_friend', currentChatId);
+            hideModal(chatActionsModal);
+        }
+    };
+    
+    modalBlockUserBtn.onclick = () => {
+        const action = currentChatFriendData.isBlocked ? 'unblock' : 'block';
+        if (confirm(`Are you sure you want to ${action} ${currentChatFriendData.username}?`)) {
+            socket.emit('block_user', currentChatId);
+            hideModal(chatActionsModal);
         }
     };
 
-    xhr.onerror = () => {
-        progressContainer.style.display = 'none';
-        alert('Upload failed due to a network error.');
+    modalDeleteChatBtn.onclick = () => {
+        // NOTE: This only deletes the local history (needs server-side implementation to delete globally)
+        alert('Local chat history deletion not fully implemented on server, but functionality exists.');
+        hideModal(chatActionsModal);
     };
 
-    xhr.open('POST', '/api/upload');
-    xhr.send(formData);
+    // 8. Group Creation Modal
+    createGroupBtn.onclick = async () => {
+        // Fetch all current friends to populate the member list
+        const res = await fetch('/api/me');
+        const userData = await res.json();
+        
+        socket.emit('refresh_data'); // Ensure we have the latest friends list
+        
+        // Simple way to get friend list (assumes init_data has already run)
+        const allContacts = [...(socket.friends || []), ...(socket.groups || [])];
+        const friends = allContacts.filter(c => !c.members);
+        
+        groupMemberList.innerHTML = '';
+        if (friends.length === 0) {
+            groupMemberList.innerHTML = '<p style="color:var(--text-muted);">Add friends first to create a group.</p>';
+        } else {
+            friends.forEach(friend => {
+                const checkbox = document.createElement('label');
+                checkbox.style.display = 'flex';
+                checkbox.style.alignItems = 'center';
+                checkbox.style.marginBottom = '8px';
+                checkbox.innerHTML = `
+                    <input type="checkbox" name="group-member" value="${friend.id}" style="width: auto; margin-right: 10px;">
+                    <img src="${friend.avatar}" class="avatar" style="width:25px; height:25px; margin-right: 5px;">
+                    ${friend.username}
+                `;
+                groupMemberList.appendChild(checkbox);
+            });
+        }
+        
+        showModal(groupCreationModal);
+    };
+
+    modalCloseGroupBtn.onclick = () => hideModal(groupCreationModal);
+
+    submitGroupBtn.onclick = () => {
+        const name = groupNameInput.value.trim();
+        const avatar = groupAvatarInput.value.trim();
+        const selectedMembers = Array.from(groupMemberList.querySelectorAll('input[name="group-member"]:checked')).map(el => el.value);
+
+        if (!name) return alert('Please enter a group name.');
+        if (selectedMembers.length === 0) return alert('Please select at least one member.');
+
+        socket.emit('create_group', {
+            name: name,
+            members: selectedMembers,
+            avatar: avatar
+        });
+        
+        hideModal(groupCreationModal);
+        groupNameInput.value = '';
+        groupAvatarInput.value = '';
+    };
+}
+
+
+// --- UTILITIES ---
+
+function scrollToBottom() {
+    messagesArea.scrollTop = messagesArea.scrollHeight;
 }
