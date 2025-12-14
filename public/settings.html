@@ -31,14 +31,6 @@
                 <button type="submit" class="btn-primary" style="width: auto; padding: 8px 16px;">Save</button>
             </form>
         </div>
-
-        <div class="settings-row">
-            <div><h4>Change Avatar (URL)</h4></div>
-            <form id="update-avatar-url-form" style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
-                <input type="url" id="new-avatar-url" placeholder="New Image URL" style="margin-bottom: 0; max-width: 200px;" required>
-                <button type="submit" class="btn-primary" style="width: auto; padding: 8px 16px;">Save</button>
-            </form>
-        </div>
         
         <div class="settings-row">
             <div><h4>Upload Avatar (File)</h4></div>
@@ -48,6 +40,18 @@
             </form>
         </div>
 
+        <div class="settings-row">
+            <div>
+                <h4>Language</h4>
+                <span style="color: var(--text-muted); font-size: 0.9rem;">Select your preferred language (Placeholder)</span>
+            </div>
+            <select id="language-select">
+                <option value="ru">Русский</option>
+                <option value="en">English</option>
+                <option value="es">Español</option>
+            </select>
+        </div>
+        
         <div class="settings-row">
             <div>
                 <h4>Dark Mode</h4>
@@ -63,7 +67,7 @@
             </div>
         </div>
 
-        <button id="logout-btn" class="btn-primary" style="background: #ef4444;">Log Out</button>
+        <button id="logout-btn" class="btn-primary" style="background: #ef4444; margin-top: 20px;">Log Out</button>
     </div>
     <script>
         lucide.createIcons();
@@ -71,10 +75,9 @@
         const myUsernameEl = document.getElementById('my-username');
         const myAvatarEl = document.getElementById('my-avatar');
         
-        // Load User Info
         async function loadUserInfo() {
              const res = await fetch('/api/me');
-             if(res.status !== 200) return window.location.href = '/login.html';
+             if(res.status !== 200) return window.location.href = '/register.html'; // Changed to register
              const user = await res.json();
              myUsernameEl.innerText = user.username;
              myAvatarEl.src = user.avatar;
@@ -93,7 +96,7 @@
             localStorage.setItem('theme', newTheme);
         };
 
-        // Update User General (Name/URL)
+        // Update User General (Name)
         async function updateUserInfo(data) {
             const res = await fetch('/api/update_user', {
                 method: 'POST',
@@ -102,7 +105,7 @@
             });
             const result = await res.json();
             if (result.success) {
-                alert('Updated successfully!');
+                alert('Username updated successfully! Avatar regenerated.');
                 myUsernameEl.innerText = result.user.username;
                 myAvatarEl.src = result.user.avatar;
             } else {
@@ -114,12 +117,6 @@
             e.preventDefault();
             const newUsername = document.getElementById('new-username').value;
             updateUserInfo({ username: newUsername });
-        };
-
-        document.getElementById('update-avatar-url-form').onsubmit = (e) => {
-            e.preventDefault();
-            const newAvatarUrl = document.getElementById('new-avatar-url').value;
-            updateUserInfo({ avatar: newAvatarUrl });
         };
 
         // Upload Avatar via File
@@ -153,10 +150,15 @@
             });
         };
         
+        // Language Select (Placeholder)
+        document.getElementById('language-select').onchange = (e) => {
+            alert(`Language changed to: ${e.target.value}. Feature coming soon!`);
+        };
+
         // Logout
         document.getElementById('logout-btn').onclick = async () => {
             await fetch('/api/logout', { method: 'POST' });
-            window.location.href = '/login.html';
+            window.location.href = '/register.html'; // Redirect to register
         };
     </script>
 </body>

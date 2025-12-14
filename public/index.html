@@ -28,9 +28,14 @@
                 <div id="requests-list" style="display: none; padding: 5px 0;">
                     </div>
             </div>
-
-            <div class="user-list" id="contacts-list">
-                </div>
+            
+            <div class="user-list-section">
+                <button id="create-group-btn" class="btn-primary" style="width: calc(100% - 2rem); margin: 0 1rem 1rem;">
+                    <i data-lucide="users-2" style="width: 16px; height: 16px; margin-right: 5px;"></i> Create Group
+                </button>
+                <div class="user-list" id="contacts-list">
+                    </div>
+            </div>
         </aside>
 
         <main class="chat-area">
@@ -39,11 +44,12 @@
             <div class="chat-header">
                 <button id="mobile-menu-toggle" class="mobile-menu-btn"><i data-lucide="menu"></i></button>
                 <h3 id="chat-title">Select a chat</h3>
+                <button id="chat-actions-btn" class="mobile-menu-btn" style="margin-left: auto; display: none;"><i data-lucide="more-vertical"></i></button>
             </div>
             
             <div class="messages" id="messages-area">
                 <div style="text-align:center; color: var(--text-muted); margin-top: 50px;">
-                    Welcome to Flix.<br>Select a friend to start messaging.
+                    Welcome to Flix.<br>Select a friend or group to start messaging.
                 </div>
             </div>
 
@@ -54,6 +60,30 @@
                 <button id="send-btn"><i data-lucide="send"></i></button>
             </div>
         </main>
+
+        <div id="chat-actions-modal" class="modal">
+            <div class="modal-content">
+                <h4>Chat Options</h4>
+                <button class="btn-modal" id="modal-remove-friend">Remove Friend</button>
+                <button class="btn-modal" id="modal-block-user" style="color: #ef4444;">Block User</button>
+                <button class="btn-modal" id="modal-delete-chat">Delete Chat History</button>
+                <button class="btn-modal" id="modal-close">Close</button>
+            </div>
+        </div>
+
+        <div id="group-creation-modal" class="modal">
+            <div class="modal-content">
+                <h4>Create Group</h4>
+                <input type="text" id="group-name-input" placeholder="Group Name" required>
+                <input type="url" id="group-avatar-input" placeholder="Group Avatar URL (Optional)">
+                <p>Select Members:</p>
+                <div id="group-member-list" style="max-height: 150px; overflow-y: auto; padding: 10px; border: 1px solid var(--border); border-radius: 8px;">
+                    </div>
+                <button id="submit-group-btn" class="btn-primary" style="margin-top: 15px;">Create</button>
+                <button class="btn-modal" id="modal-close-group">Cancel</button>
+            </div>
+        </div>
+
     </div>
     <script src="js/client.js"></script>
     <script>lucide.createIcons();</script>
