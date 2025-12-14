@@ -29,7 +29,6 @@ const getDB = () => {
     if (!fs.existsSync(DB_FILE)) return { users: [], messages: [], friendships: [], groups: [] };
     try {
         const data = JSON.parse(fs.readFileSync(DB_FILE));
-        // Ensure all required fields exist
         if (!data.groups) data.groups = [];
         if (!data.friendships) data.friendships = [];
         return data;
@@ -53,16 +52,24 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage });
 
-// Auth Middleware
+// Auth Middleware (Исправлено для корректной обработки API-запросов)
 const requireAuth = (req, res, next) => {
     const userId = req.cookies.user_session;
+    
     if (!userId) {
+        if (req.originalUrl.startsWith('/api/')) {
+            return res.status(401).json({ error: 'Unauthorized: Session required.' });
+        }
         return res.redirect(UNAUTH_REDIRECT_URL);
     }
+    
     const db = getDB();
     const user = db.users.find(u => u.id === userId);
     if (!user) {
         res.clearCookie('user_session');
+        if (req.originalUrl.startsWith('/api/')) {
+            return res.status(401).json({ error: 'Unauthorized: Invalid session.' });
+        }
         return res.redirect(UNAUTH_REDIRECT_URL);
     }
     req.user = user;
@@ -128,7 +135,7 @@ app.post('/api/logout', (req, res) => {
     res.status(200).json({ message: 'Logged out successfully' });
 });
 
-// Upload Route (Media File handling)
+// Upload Route
 app.post('/api/upload', requireAuth, upload.single('file'), (req, res) => {
     if (!req.file) return res.status(400).json({ error: 'No file' });
     res.json({ 
@@ -136,6 +143,28 @@ app.post('/api/upload', requireAuth, upload.single('file'), (req, res) => {
         type: req.file.mimetype, 
         name: req.file.originalname 
     });
+});
+
+// Update Avatar Route
+app.post('/api/update_avatar', requireAuth, (req, res) => {
+    const { newAvatarUrl } = req.body;
+    
+    if (!newAvatarUrl) {
+        return res.status(400).json({ error: 'New avatar URL is required.' });
+    }
+
+    const db = getDB();
+    const userIndex = db.users.findIndex(u => u.id === req.user.id);
+    
+    if (userIndex === -1) {
+        return res.status(404).json({ error: 'User not found.' });
+    }
+
+    db.users[userIndex].avatar = newAvatarUrl;
+    saveDB(db);
+
+    const { password, ...updatedUserSafe } = db.users[userIndex];
+    res.json({ message: 'Avatar updated successfully', user: updatedUserSafe });
 });
 
 
@@ -296,7 +325,6 @@ io.on('connection', (socket) => {
         if (msgIndex !== -1) {
             const targetMessage = db.messages[msgIndex];
             
-            // Recipients: target user, or all group members
             let recipients = [];
             if (isGroup) {
                 const group = db.groups.find(g => g.id === chatId);
@@ -304,14 +332,11 @@ io.on('connection', (socket) => {
             } else {
                 recipients = [targetMessage.to, targetMessage.from];
             }
-            recipients = recipients.filter(id => id !== userId); // Exclude sender from recipients list for sending notification
+            recipients = recipients.filter(id => id !== userId); 
 
-
-            // Remove from DB (PERMANENT DELETE)
             db.messages.splice(msgIndex, 1);
             saveDB(db);
             
-            // Notify all participants (including sender)
             io.to(userId).emit('message_deleted', { messageId, chatId, isGroup, permanent: true });
             recipients.forEach(id => io.to(id).emit('message_deleted', { messageId, chatId, isGroup, permanent: true }));
             
@@ -342,17 +367,14 @@ io.on('connection', (socket) => {
         const isCurrentlyBlocked = friendship.blockerId;
         
         if (isCurrentlyBlocked) {
-            // Unblock
             friendship.blockerId = null;
             socket.emit('success', 'User unblocked.');
         } else {
-            // Block
             friendship.blockerId = userId;
             socket.emit('success', 'User blocked.');
         }
         
         saveDB(db);
-        // Notify both users to refresh their state
         io.to(userId).emit('refresh_data');
         io.to(targetId).emit('refresh_data');
     });
@@ -426,8 +448,7 @@ io.on('connection', (socket) => {
 
     socket.on('disconnect', () => {
         onlineUsers.delete(userId);
-         // Notify friends about status change
-        db.friendships
+         db.friendships
             .filter(f => (f.from === userId || f.to === userId) && f.status === 'accepted')
             .forEach(f => {
                 const friendId = f.from === userId ? f.to : f.from;

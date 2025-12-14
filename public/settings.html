@@ -1,165 +1,44 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="light">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Flix | Settings</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="stylesheet" href="css/style.css">
-    <script src="https://unpkg.com/lucide@latest"></script>
+    <title>Flix | Settings</title>
+    <link rel="stylesheet" href="css/style.css"> 
 </head>
 <body>
-    <div class="settings-container">
-        <div style="display:flex; align-items:center; margin-bottom: 2rem;">
-            <a href="/" style="margin-right: 1rem; color: var(--text-main);"><i data-lucide="arrow-left"></i></a>
-            <h2>Settings</h2>
-        </div>
-
-        <div class="settings-row" style="border-bottom: 1px solid var(--border); padding-bottom: 1rem;">
-            <div style="display: flex; align-items: center;">
-                <img id="my-avatar" class="avatar" style="width: 60px; height: 60px; margin-right: 15px;" src="">
+    <div class="auth-container" style="height: auto; min-height: 100vh;">
+        <h1 class="logo" style="margin-top: 50px;">Settings.</h1>
+        
+        <div class="form-card" style="max-width: 500px;">
+            <h2>User Profile</h2>
+            
+            <div style="display: flex; align-items: center; margin-bottom: 20px;">
+                <img id="current-avatar" src="" alt="Avatar" class="avatar" style="width: 80px; height: 80px; margin-right: 20px;">
                 <div>
-                    <h4 id="my-username">Loading...</h4>
-                    <span style="color: var(--text-muted); font-size: 0.9rem;">My Account</span>
+                    <h3 id="username-display">Loading...</h3>
+                    <p style="color: var(--text-muted); font-size: 0.9rem;">Change your profile settings.</p>
                 </div>
             </div>
-        </div>
 
-        <div class="settings-row">
-            <div><h4>Change Username</h4></div>
-            <form id="update-name-form" style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
-                <input type="text" id="new-username" placeholder="New Username" style="margin-bottom: 0; max-width: 200px;" required>
-                <button type="submit" class="btn-primary" style="width: auto; padding: 8px 16px;">Save</button>
+            <hr style="border: 0; border-top: 1px solid var(--border); margin: 20px 0;">
+
+            <h3>Update Avatar</h3>
+            <p style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 15px;">Paste a direct image URL (e.g., from Imgur, or the URL of a previously uploaded file).</p>
+            
+            <form id="avatar-form">
+                <input type="url" id="avatar-url-input" placeholder="New Avatar URL (http://...)" required>
+                <button type="button" id="update-avatar-btn" class="btn-primary">Update Avatar</button>
             </form>
-        </div>
-        
-        <div class="settings-row">
-            <div><h4>Upload Avatar (File)</h4></div>
-            <form id="upload-avatar-file-form" style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
-                <input type="file" id="avatar-file-input" accept="image/png, image/jpeg, image/webp" style="margin-bottom: 0; max-width: 200px;" required>
-                <button type="submit" class="btn-primary" style="width: auto; padding: 8px 16px;">Upload</button>
-            </form>
-        </div>
 
-        <div class="settings-row">
-            <div>
-                <h4>Language</h4>
-                <span style="color: var(--text-muted); font-size: 0.9rem;">Select your preferred language (Placeholder)</span>
-            </div>
-            <select id="language-select">
-                <option value="ru">Русский</option>
-                <option value="en">English</option>
-                <option value="es">Español</option>
-            </select>
-        </div>
-        
-        <div class="settings-row">
-            <div>
-                <h4>Dark Mode</h4>
-                <span style="color: var(--text-muted); font-size: 0.9rem;">Switch between light and dark themes</span>
-            </div>
-            <button id="theme-toggle" class="btn-primary" style="width: auto; padding: 8px 16px;">Toggle</button>
-        </div>
+            <p id="status-message" class="error-message"></p>
 
-        <div class="settings-row" style="border-bottom: none;">
-            <div>
-                <h4>Author</h4>
-                <span style="color: var(--text-muted); font-size: 0.9rem;">Project created by Today</span>
-            </div>
+            <hr style="border: 0; border-top: 1px solid var(--border); margin: 20px 0;">
+            
+            <a href="/" class="auth-link" style="text-align: left; margin-top: 0;">&larr; Back to Chat</a>
         </div>
-
-        <button id="logout-btn" class="btn-primary" style="background: #ef4444; margin-top: 20px;">Log Out</button>
     </div>
-    <script>
-        lucide.createIcons();
-        
-        const myUsernameEl = document.getElementById('my-username');
-        const myAvatarEl = document.getElementById('my-avatar');
-        
-        async function loadUserInfo() {
-             const res = await fetch('/api/me');
-             if(res.status !== 200) return window.location.href = '/register.html'; // Changed to register
-             const user = await res.json();
-             myUsernameEl.innerText = user.username;
-             myAvatarEl.src = user.avatar;
-        }
-        loadUserInfo();
 
-        // Theme Logic
-        const toggleBtn = document.getElementById('theme-toggle');
-        const currentTheme = localStorage.getItem('theme') || 'light';
-        document.documentElement.setAttribute('data-theme', currentTheme);
-
-        toggleBtn.onclick = () => {
-            const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-            const newTheme = isDark ? 'light' : 'dark';
-            document.documentElement.setAttribute('data-theme', newTheme);
-            localStorage.setItem('theme', newTheme);
-        };
-
-        // Update User General (Name)
-        async function updateUserInfo(data) {
-            const res = await fetch('/api/update_user', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify(data)
-            });
-            const result = await res.json();
-            if (result.success) {
-                alert('Username updated successfully! Avatar regenerated.');
-                myUsernameEl.innerText = result.user.username;
-                myAvatarEl.src = result.user.avatar;
-            } else {
-                alert(result.error);
-            }
-        }
-
-        document.getElementById('update-name-form').onsubmit = (e) => {
-            e.preventDefault();
-            const newUsername = document.getElementById('new-username').value;
-            updateUserInfo({ username: newUsername });
-        };
-
-        // Upload Avatar via File
-        document.getElementById('upload-avatar-file-form').onsubmit = (e) => {
-            e.preventDefault();
-            const fileInput = document.getElementById('avatar-file-input');
-            const file = fileInput.files[0];
-
-            if (!file) return alert('Please select a file.');
-
-            const formData = new FormData();
-            formData.append('avatar', file);
-
-            fetch('/api/update_avatar', {
-                method: 'POST',
-                body: formData
-            })
-            .then(res => res.json())
-            .then(result => {
-                if (result.success) {
-                    alert('Avatar uploaded successfully!');
-                    myAvatarEl.src = result.user.avatar;
-                    fileInput.value = ''; 
-                } else {
-                    alert('Upload failed: ' + result.error);
-                }
-            })
-            .catch(err => {
-                alert('A network error occurred during upload.');
-                console.error(err);
-            });
-        };
-        
-        // Language Select (Placeholder)
-        document.getElementById('language-select').onchange = (e) => {
-            alert(`Language changed to: ${e.target.value}. Feature coming soon!`);
-        };
-
-        // Logout
-        document.getElementById('logout-btn').onclick = async () => {
-            await fetch('/api/logout', { method: 'POST' });
-            window.location.href = '/register.html'; // Redirect to register
-        };
-    </script>
+    <script src="js/settings.js"></script>
 </body>
 </html>
